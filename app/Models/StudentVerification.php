@@ -16,6 +16,7 @@ class StudentVerification extends Model
 
     protected $fillable = [
         'user_id',
+        'verification_use',
         'link',
         'is_verified',
     ];
