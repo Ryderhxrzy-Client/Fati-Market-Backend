@@ -18,6 +18,7 @@ class StudentInformation extends Model
         'user_id',
         'first_name',
         'last_name',
+        'profile_picture',
     ];
 
     public function user()

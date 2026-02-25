@@ -21,6 +21,7 @@ class AuthController extends Controller
             'email' => ['required', 'email', 'unique:users', 'ends_with:@student.fatima.edu.ph'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'student_id_photo' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
             'verification_use' => ['required', 'in:registration_card,student_id'],
         ]);
 
@@ -44,8 +45,19 @@ class AuthController extends Controller
 
             $photoUrl = $uploadResult['secure_url'];
 
+            // Upload profile picture to Cloudinary
+            $profileUploadResult = $cloudinary->uploadApi()->upload(
+                $request->file('profile_picture')->getRealPath(),
+                [
+                    'folder' => 'student_profiles',
+                    'resource_type' => 'image',
+                ]
+            );
+
+            $profilePictureUrl = $profileUploadResult['secure_url'];
+
             // Create user and related records in transaction
-            $result = DB::transaction(function () use ($validated, $photoUrl) {
+            $result = DB::transaction(function () use ($validated, $photoUrl, $profilePictureUrl) {
                 // Create user
                 $user = User::create([
                     'email' => $validated['email'],
@@ -60,6 +72,7 @@ class AuthController extends Controller
                     'user_id' => $user->user_id,
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
+                    'profile_picture' => $profilePictureUrl,
                 ]);
 
                 // Create student verification
