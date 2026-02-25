@@ -8,6 +8,7 @@ use App\Models\StudentVerification;
 use App\Models\User;
 use Cloudinary\Cloudinary;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
@@ -103,6 +104,62 @@ class AuthController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Registration failed',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function login(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email', 'ends_with:@student.fatima.edu.ph'],
+            'password' => ['required', 'string'],
+        ]);
+
+        try {
+            // Find user by email
+            $user = User::where('email', $validated['email'])->first();
+
+            // Check if user exists
+            if (!$user) {
+                return response()->json([
+                    'message' => 'Invalid credentials',
+                ], 401);
+            }
+
+            // Check if password is correct
+            if (!Hash::check($validated['password'], $user->password)) {
+                return response()->json([
+                    'message' => 'Invalid credentials',
+                ], 401);
+            }
+
+            // Check if user account is active (approved by admin)
+            if (!$user->is_active) {
+                return response()->json([
+                    'message' => 'Account is not yet approved by admin',
+                ], 403);
+            }
+
+            // Get student information
+            $studentInfo = StudentInformation::where('user_id', $user->user_id)->first();
+
+            return response()->json([
+                'message' => 'Login successful',
+                'data' => [
+                    'user_id' => $user->user_id,
+                    'email' => $user->email,
+                    'first_name' => $studentInfo?->first_name,
+                    'last_name' => $studentInfo?->last_name,
+                    'profile_picture' => $studentInfo?->profile_picture,
+                    'role' => $user->role,
+                    'wallet_points' => $user->wallet_points,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Login failed',
                 'error' => $e->getMessage(),
             ], 500);
         }
