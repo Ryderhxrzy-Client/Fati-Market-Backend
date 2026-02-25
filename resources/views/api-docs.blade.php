@@ -636,6 +636,126 @@
                 </div>
             </section>
 
+            <!-- Login Endpoint -->
+            <section id="login">
+                <h2><i class="fas fa-sign-in-alt"></i> Student Login</h2>
+                <p>Authenticate a student account using email and password. Account must be approved by admin to login.</p>
+
+                <div class="endpoint-card">
+                    <h4><span class="method method-post">POST</span> /api/login</h4>
+                    <p><strong>Authentication:</strong> Not required</p>
+                    <p><strong>Content-Type:</strong> application/json</p>
+                </div>
+
+                <h3>Request Parameters</h3>
+                <table>
+                    <tr>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Required</th>
+                        <th>Constraints</th>
+                    </tr>
+                    <tr>
+                        <td><code>email</code></td>
+                        <td>string</td>
+                        <td><span class="param-required">✓</span></td>
+                        <td>Must end with @student.fatima.edu.ph</td>
+                    </tr>
+                    <tr>
+                        <td><code>password</code></td>
+                        <td>string</td>
+                        <td><span class="param-required">✓</span></td>
+                        <td>Plain text password</td>
+                    </tr>
+                </table>
+
+                <h3>Success Response (HTTP 200)</h3>
+                <div class="success-box">
+                    <strong>Status: 200 OK</strong>
+                </div>
+
+                <div class="code-block">
+{
+  "message": "Login successful",
+  "data": {
+    "user_id": 42,
+    "email": "juan.delacruz@student.fatima.edu.ph",
+    "first_name": "Juan",
+    "last_name": "Dela Cruz",
+    "profile_picture": "https://res.cloudinary.com/...",
+    "role": "student",
+    "wallet_points": 0
+  }
+}
+                </div>
+
+                <h3>Error Responses</h3>
+
+                <div class="collapsible-header" onclick="toggleCollapsible(this)">
+                    <span>View Error Responses</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="collapsible-content">
+                    <div class="error-item">
+                        <h4>Invalid Email Domain (HTTP 422)</h4>
+                        <div class="error-box">Email must end with @student.fatima.edu.ph</div>
+                        <div class="code-block">
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "email": ["The email field must end with @student.fatima.edu.ph."]
+  }
+}
+                        </div>
+                    </div>
+
+                    <div class="error-item">
+                        <h4>Invalid Credentials (HTTP 401)</h4>
+                        <div class="error-box">Email or password is incorrect</div>
+                        <div class="code-block">
+{
+  "message": "Invalid credentials"
+}
+                        </div>
+                    </div>
+
+                    <div class="error-item">
+                        <h4>Account Not Approved (HTTP 403)</h4>
+                        <div class="error-box">Admin has not yet approved this account</div>
+                        <div class="code-block">
+{
+  "message": "Account is not yet approved by admin"
+}
+                        </div>
+                    </div>
+
+                    <div class="error-item">
+                        <h4>Missing Required Fields (HTTP 422)</h4>
+                        <div class="error-box">Email or password field is missing</div>
+                        <div class="code-block">
+{
+  "message": "The given data was invalid.",
+  "errors": {
+    "email": ["The email field is required."],
+    "password": ["The password field is required."]
+  }
+}
+                        </div>
+                    </div>
+
+                    <div class="error-item">
+                        <h4>Server Error (HTTP 500)</h4>
+                        <div class="error-box">Unexpected server error during login</div>
+                        <div class="code-block">
+{
+  "message": "Login failed",
+  "error": "Error details here"
+}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Database Schema -->
             <section id="database">
                 <h2><i class="fas fa-database"></i> Database Schema</h2>
@@ -659,6 +779,7 @@ student_id: INT (PK, auto-increment)
 user_id: INT (FK)
 first_name: VARCHAR
 last_name: VARCHAR
+profile_picture: VARCHAR (Cloudinary URL)
 created_at: TIMESTAMP
 updated_at: TIMESTAMP
                 </div>
@@ -667,7 +788,8 @@ updated_at: TIMESTAMP
                 <div class="code-block">
 student_id: INT (PK, auto-increment)
 user_id: INT (FK)
-link: TEXT (Cloudinary URL)
+verification_use: ENUM ('registration_card', 'student_id')
+link: VARCHAR (Cloudinary URL)
 is_verified: BOOLEAN (default: FALSE)
 created_at: TIMESTAMP
 updated_at: TIMESTAMP
