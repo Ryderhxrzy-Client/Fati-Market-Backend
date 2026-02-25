@@ -10,7 +10,6 @@ use Cloudinary\Cloudinary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\Rule;
 
 class AuthController extends Controller
 {
@@ -19,9 +18,10 @@ class AuthController extends Controller
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users', Rule::ends_with('@olfu.edu.ph')],
+            'email' => ['required', 'email', 'unique:users', 'ends_with:@student.fatima.edu.ph'],
             'password' => ['required', 'string', 'min:8', 'confirmed'],
             'student_id_photo' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'verification_use' => ['required', 'in:registration_card,student_id'],
         ]);
 
         try {
@@ -65,6 +65,7 @@ class AuthController extends Controller
                 // Create student verification
                 StudentVerification::create([
                     'user_id' => $user->user_id,
+                    'verification_use' => $validated['verification_use'],
                     'link' => $photoUrl,
                     'is_verified' => false,
                 ]);
