@@ -173,12 +173,18 @@ class AuthController extends Controller
                 ], 401);
             }
 
-            // Check if user account is active (approved by admin)
-            if (!$user->is_active) {
-                return response()->json([
-                    'message' => 'Account is not yet approved by admin',
-                ], 403);
+            // Check if student is verified (only for students, not admins)
+            if ($user->role === 'student') {
+                $studentVerification = StudentVerification::where('user_id', $user->user_id)->first();
+                if (!$studentVerification || !$studentVerification->is_verified) {
+                    return response()->json([
+                        'message' => 'Your account is pending verification. Please wait for admin approval.',
+                    ], 403);
+                }
             }
+
+            // Mark user as active
+            $user->update(['is_active' => true]);
 
             // Get student information
             $studentInfo = StudentInformation::where('user_id', $user->user_id)->first();
