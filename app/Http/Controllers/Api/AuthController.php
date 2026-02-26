@@ -36,6 +36,11 @@ class AuthController extends Controller
                 ]
             ]);
 
+            \Log::info('Starting student ID photo upload to Cloudinary', [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'file' => $request->file('student_id_photo')?->getClientOriginalName(),
+            ]);
+
             $uploadResult = $cloudinary->uploadApi()->upload(
                 $request->file('student_id_photo')->getRealPath(),
                 [
@@ -44,9 +49,23 @@ class AuthController extends Controller
                 ]
             );
 
+            \Log::info('Student ID upload result', ['result' => $uploadResult]);
+
+            if (!isset($uploadResult['secure_url'])) {
+                \Log::error('Cloudinary upload failed - no secure_url returned', ['response' => $uploadResult]);
+                return response()->json([
+                    'message' => 'Failed to upload student ID photo',
+                    'error' => 'Cloudinary upload error',
+                ], 500);
+            }
+
             $photoUrl = $uploadResult['secure_url'];
 
             // Upload profile picture to Cloudinary
+            \Log::info('Starting profile picture upload to Cloudinary', [
+                'file' => $request->file('profile_picture')?->getClientOriginalName(),
+            ]);
+
             $profileUploadResult = $cloudinary->uploadApi()->upload(
                 $request->file('profile_picture')->getRealPath(),
                 [
@@ -55,11 +74,24 @@ class AuthController extends Controller
                 ]
             );
 
+            \Log::info('Profile picture upload result', ['result' => $profileUploadResult]);
+
+            if (!isset($profileUploadResult['secure_url'])) {
+                \Log::error('Cloudinary upload failed - no secure_url returned', ['response' => $profileUploadResult]);
+                return response()->json([
+                    'message' => 'Failed to upload profile picture',
+                    'error' => 'Cloudinary upload error',
+                ], 500);
+            }
+
             $profilePictureUrl = $profileUploadResult['secure_url'];
 
             // Create user and related records in transaction
+            \Log::info('Starting database transaction for registration', ['email' => $validated['email']]);
+
             $result = DB::transaction(function () use ($validated, $photoUrl, $profilePictureUrl) {
                 // Create user
+                \Log::info('Creating user record', ['email' => $validated['email']]);
                 $user = User::create([
                     'email' => $validated['email'],
                     'password' => Hash::make($validated['password']),
@@ -67,28 +99,35 @@ class AuthController extends Controller
                     'role' => 'student',
                     'is_active' => false,
                 ]);
+                \Log::info('User created successfully', ['user_id' => $user->user_id]);
 
                 // Create student information
+                \Log::info('Creating student information', ['user_id' => $user->user_id]);
                 $studentInfo = StudentInformation::create([
                     'user_id' => $user->user_id,
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
                     'profile_picture' => $profilePictureUrl,
                 ]);
+                \Log::info('Student information created', ['student_id' => $studentInfo->student_id]);
 
                 // Create student verification
+                \Log::info('Creating student verification', ['user_id' => $user->user_id, 'verification_use' => $validated['verification_use']]);
                 StudentVerification::create([
                     'user_id' => $user->user_id,
                     'verification_use' => $validated['verification_use'],
                     'link' => $photoUrl,
                     'is_verified' => false,
                 ]);
+                \Log::info('Student verification created');
 
                 return [
                     'user_id' => $user->user_id,
                     'student_id' => $studentInfo->student_id,
                 ];
             });
+
+            \Log::info('Transaction completed successfully', ['result' => $result]);
 
             return response()->json([
                 'message' => 'Registration successful. Please wait for admin approval.',
