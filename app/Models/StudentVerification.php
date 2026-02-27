@@ -9,7 +9,7 @@ class StudentVerification extends Model
 {
     use HasFactory;
 
-    protected $primaryKey = 'student_id';
+    protected $primaryKey = 'student_verification_id';
     public $incrementing = true;
     protected $keyType = 'int';
     protected $table = 'student_verification';
@@ -19,6 +19,8 @@ class StudentVerification extends Model
         'verification_use',
         'link',
         'is_verified',
+        'status',
+        'reason',
     ];
 
     protected $casts = [
