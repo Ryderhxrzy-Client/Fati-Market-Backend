@@ -118,6 +118,7 @@ class AuthController extends Controller
                     'verification_use' => $validated['verification_use'],
                     'link' => $photoUrl,
                     'is_verified' => false,
+                    'status' => 'pending',
                 ]);
                 \Log::info('Student verification created');
 
@@ -189,6 +190,9 @@ class AuthController extends Controller
             // Get student information
             $studentInfo = StudentInformation::where('user_id', $user->user_id)->first();
 
+            // Generate Sanctum token
+            $token = $user->createToken('auth_token')->plainTextToken;
+
             return response()->json([
                 'message' => 'Login successful',
                 'data' => [
@@ -199,6 +203,7 @@ class AuthController extends Controller
                     'profile_picture' => $studentInfo?->profile_picture,
                     'role' => $user->role,
                     'wallet_points' => $user->wallet_points,
+                    'token' => $token,
                 ]
             ], 200);
 
