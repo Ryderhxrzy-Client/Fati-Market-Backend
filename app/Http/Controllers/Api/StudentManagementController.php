@@ -68,8 +68,8 @@ class StudentManagementController extends Controller
     }
 
     /**
-     * Get all students (verified and unverified)
-     * GET /api/admin/students
+     * Get all students (verified and unverified) with optional status filter
+     * GET /api/admin/students?status=pending|approved|declined
      */
     public function getAllStudents(Request $request)
     {
@@ -81,16 +81,34 @@ class StudentManagementController extends Controller
                 ], 403);
             }
 
-            // Get all students
-            $allStudents = StudentVerification::with([
+            // Get status filter from query parameter
+            $statusFilter = $request->query('status');
+
+            // Validate status filter
+            $validStatuses = ['pending', 'approved', 'declined'];
+            if ($statusFilter && !in_array($statusFilter, $validStatuses)) {
+                return response()->json([
+                    'message' => 'Invalid status filter. Must be: pending, approved, or declined.',
+                ], 400);
+            }
+
+            // Build query
+            $query = StudentVerification::with([
                 'user' => function ($query) {
                     $query->select('user_id', 'email', 'wallet_points', 'is_active', 'created_at');
                 },
                 'user.studentInfo' => function ($query) {
                     $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
                 }
-            ])
-                ->get()
+            ]);
+
+            // Apply status filter
+            if ($statusFilter) {
+                $query->where('status', $statusFilter);
+            }
+
+            // Get all students
+            $allStudents = $query->get()
                 ->map(function ($verification) {
                     return [
                         'student_verification_id' => $verification->student_verification_id,
@@ -105,14 +123,16 @@ class StudentManagementController extends Controller
                         'wallet_points' => $verification->user->wallet_points,
                         'is_active' => $verification->user->is_active,
                         'registered_date' => $verification->user->created_at,
-                        'status' => $verification->is_verified ? 'approved' : 'pending',
+                        'status' => $verification->status,
+                        'reason' => $verification->reason,
                     ];
                 });
 
             return response()->json([
-                'message' => 'All students retrieved successfully',
+                'message' => 'Students retrieved successfully',
                 'data' => $allStudents,
                 'count' => $allStudents->count(),
+                'filter' => $statusFilter ?? 'all',
             ], 200);
 
         } catch (\Exception $e) {
