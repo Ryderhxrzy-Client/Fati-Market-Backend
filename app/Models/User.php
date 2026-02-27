@@ -6,11 +6,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Laravel\Sanctum\HasApiTokens;
 
 class User extends Authenticatable
 {
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, Notifiable;
 
     protected $primaryKey = 'user_id';
     public $incrementing = true;
@@ -50,5 +51,21 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+
+    /**
+     * Get student information
+     */
+    public function studentInfo()
+    {
+        return $this->hasOne(StudentInformation::class, 'user_id', 'user_id');
+    }
+
+    /**
+     * Get student verification
+     */
+    public function verification()
+    {
+        return $this->hasOne(StudentVerification::class, 'user_id', 'user_id');
     }
 }
