@@ -214,4 +214,72 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Update profile picture
+     * PUT /api/profile/picture
+     */
+    public function updateProfilePicture(Request $request)
+    {
+        $validated = $request->validate([
+            'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+        ]);
+
+        try {
+            // Initialize Cloudinary
+            $cloudinary = new Cloudinary([
+                'cloud' => [
+                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                    'api_key' => env('CLOUDINARY_KEY'),
+                    'api_secret' => env('CLOUDINARY_SECRET'),
+                ]
+            ]);
+
+            // Upload profile picture to Cloudinary
+            $profileUploadResult = $cloudinary->uploadApi()->upload(
+                $request->file('profile_picture')->getRealPath(),
+                [
+                    'folder' => 'student_profiles',
+                    'resource_type' => 'image',
+                ]
+            );
+
+            if (!isset($profileUploadResult['secure_url'])) {
+                return response()->json([
+                    'message' => 'Failed to upload profile picture',
+                    'error' => 'Cloudinary upload error',
+                ], 500);
+            }
+
+            $profilePictureUrl = $profileUploadResult['secure_url'];
+
+            // Get current user's student information
+            $studentInfo = StudentInformation::where('user_id', $request->user()->user_id)->first();
+
+            if (!$studentInfo) {
+                return response()->json([
+                    'message' => 'Student information not found',
+                ], 404);
+            }
+
+            // Update profile picture
+            $studentInfo->update([
+                'profile_picture' => $profilePictureUrl,
+            ]);
+
+            return response()->json([
+                'message' => 'Profile picture updated successfully',
+                'data' => [
+                    'user_id' => $request->user()->user_id,
+                    'profile_picture' => $profilePictureUrl,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to update profile picture',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
