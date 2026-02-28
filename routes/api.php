@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\MessagesController;
 use App\Http\Controllers\Api\ItemsController;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
 // Public routes
@@ -14,6 +15,11 @@ Route::post('/login', [AuthController::class, 'login']);
 // Public items routes (can view items without auth)
 Route::get('/items', [ItemsController::class, 'getAllItems']);
 Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
+
+// Broadcasting authorization endpoint (for Pusher real-time)
+Route::post('/broadcasting/auth', function (Request $request) {
+    return Broadcast::auth($request);
+})->middleware('auth:sanctum');
 
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
