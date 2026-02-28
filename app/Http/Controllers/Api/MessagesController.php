@@ -69,32 +69,52 @@ class MessagesController extends Controller
     }
 
     /**
-     * Get all messages for an item
+     * Get all messages for an item (current user only)
      * GET /api/messages/{item_id}
      */
     public function getMessagesByItem(Request $request, $itemId)
     {
         try {
-            // Get all messages for this item
+            $userId = $request->user()->user_id;
+
+            // Get messages for this item where current user is sender or receiver
             $messages = Message::with([
                 'sender' => function ($query) {
                     $query->select('user_id', 'email');
                 },
+                'sender.studentInfo' => function ($query) {
+                    $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
+                },
                 'receiver' => function ($query) {
                     $query->select('user_id', 'email');
+                },
+                'receiver.studentInfo' => function ($query) {
+                    $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
+                },
+                'item' => function ($query) {
+                    $query->select('item_id', 'title');
                 }
             ])
                 ->where('item_id', $itemId)
+                ->where(function ($query) use ($userId) {
+                    $query->where('sender_id', $userId)
+                        ->orWhere('receiver_id', $userId);
+                })
                 ->orderBy('sent_at', 'asc')
                 ->get()
                 ->map(function ($msg) {
                     return [
                         'message_id' => $msg->message_id,
                         'item_id' => $msg->item_id,
+                        'item_title' => $msg->item?->title,
                         'sender_id' => $msg->sender_id,
                         'sender_email' => $msg->sender->email,
+                        'sender_name' => $msg->sender->studentInfo?->first_name . ' ' . $msg->sender->studentInfo?->last_name,
+                        'sender_profile_picture' => $msg->sender->studentInfo?->profile_picture,
                         'receiver_id' => $msg->receiver_id,
                         'receiver_email' => $msg->receiver->email,
+                        'receiver_name' => $msg->receiver->studentInfo?->first_name . ' ' . $msg->receiver->studentInfo?->last_name,
+                        'receiver_profile_picture' => $msg->receiver->studentInfo?->profile_picture,
                         'message' => $msg->message,
                         'sent_at' => $msg->sent_at,
                     ];
@@ -131,8 +151,17 @@ class MessagesController extends Controller
                     'sender' => function ($query) {
                         $query->select('user_id', 'email');
                     },
+                    'sender.studentInfo' => function ($query) {
+                        $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
+                    },
                     'receiver' => function ($query) {
                         $query->select('user_id', 'email');
+                    },
+                    'receiver.studentInfo' => function ($query) {
+                        $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
+                    },
+                    'item' => function ($query) {
+                        $query->select('item_id', 'title');
                     }
                 ])
                 ->orderBy('sent_at', 'desc')
@@ -148,6 +177,11 @@ class MessagesController extends Controller
                     return [
                         'other_user_id' => $otherUserId,
                         'other_user_email' => $otherUser->email,
+                        'first_name' => $otherUser->studentInfo?->first_name,
+                        'last_name' => $otherUser->studentInfo?->last_name,
+                        'profile_picture' => $otherUser->studentInfo?->profile_picture,
+                        'item_id' => $latestMessage->item_id,
+                        'item_title' => $latestMessage->item?->title,
                         'latest_message' => $latestMessage->message,
                         'last_message_at' => $latestMessage->sent_at,
                         'message_count' => $messages->count(),
