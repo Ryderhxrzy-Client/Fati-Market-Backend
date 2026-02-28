@@ -18,7 +18,7 @@ Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
     // Profile routes
-    Route::put('/profile/picture', [AuthController::class, 'updateProfilePicture']);
+    Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
 
     // Admin student management routes
     Route::prefix('admin/students')->group(function () {

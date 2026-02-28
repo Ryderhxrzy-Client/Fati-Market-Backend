@@ -221,11 +221,22 @@ class AuthController extends Controller
      */
     public function updateProfilePicture(Request $request)
     {
-        $validated = $request->validate([
-            'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
-        ]);
-
         try {
+            
+            // Only students need verification check
+            if ($request->user()->role === 'student') {
+                $verification = StudentVerification::where('user_id', $request->user()->user_id)->first();
+                if (!$verification || !$verification->is_verified) {
+                    return response()->json([
+                        'message' => 'Your account is not verified yet. Please wait for admin approval.',
+                    ], 403);
+                }
+            }
+
+            $request->validate([
+                'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            ]);
+
             // Initialize Cloudinary
             $cloudinary = new Cloudinary([
                 'cloud' => [
@@ -267,6 +278,7 @@ class AuthController extends Controller
                 'profile_picture' => $profilePictureUrl,
             ]);
 
+            
             return response()->json([
                 'message' => 'Profile picture updated successfully',
                 'data' => [
@@ -275,6 +287,12 @@ class AuthController extends Controller
                 ]
             ], 200);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Failed to update profile picture',
+                'error' => 'Validation failed',
+                'validation_errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to update profile picture',
