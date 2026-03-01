@@ -20,5 +20,11 @@ Broadcast::channel('item.{itemId}', function ($user) {
 
 // Authorize users to listen to conversation channels (both participants can access)
 Broadcast::channel('conversation.{userId1}.{userId2}', function ($user, $userId1, $userId2) {
-    return (int) $user->user_id === (int) $userId1 || (int) $user->user_id === (int) $userId2;
+    // Allow access if user is one of the participants
+    // Using getKey() to get the primary key value regardless of column name
+    $userKey = (int) $user->getKey();
+    $user1 = (int) $userId1;
+    $user2 = (int) $userId2;
+
+    return $userKey === $user1 || $userKey === $user2;
 });
