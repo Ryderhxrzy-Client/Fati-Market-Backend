@@ -170,8 +170,9 @@ class MessagesController extends Controller
                 ->orderBy('sent_at', 'desc')
                 ->get()
                 ->groupBy(function ($message) use ($userId) {
-                    // Group by the other user (not current user)
-                    return $message->sender_id === $userId ? $message->receiver_id : $message->sender_id;
+                    // Group by the other user AND item (separate conversations per item)
+                    $otherUserId = $message->sender_id === $userId ? $message->receiver_id : $message->sender_id;
+                    return $otherUserId . '_' . $message->item_id;
                 })
                 ->map(function ($messages, $otherUserId) use ($userId) {
                     $latestMessage = $messages->first();
