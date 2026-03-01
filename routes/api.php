@@ -33,6 +33,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/pending', [StudentManagementController::class, 'getPendingStudents']);
         Route::put('/{user_id}/approve', [StudentManagementController::class, 'approveStudent']);
         Route::put('/{user_id}/decline', [StudentManagementController::class, 'declineStudent']);
+        Route::put('/{user_id}/block', [StudentManagementController::class, 'blockStudent']);
         Route::get('/{user_id}', [StudentManagementController::class, 'getStudentDetails']);
     });
 
