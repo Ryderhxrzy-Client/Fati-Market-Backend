@@ -85,10 +85,10 @@ class StudentManagementController extends Controller
             $statusFilter = $request->query('status');
 
             // Validate status filter
-            $validStatuses = ['pending', 'approved', 'declined'];
+            $validStatuses = ['pending', 'approved', 'declined', 'blocked'];
             if ($statusFilter && !in_array($statusFilter, $validStatuses)) {
                 return response()->json([
-                    'message' => 'Invalid status filter. Must be: pending, approved, or declined.',
+                    'message' => 'Invalid status filter. Must be: pending, approved, declined, or blocked.',
                 ], 400);
             }
 
@@ -311,6 +311,69 @@ class StudentManagementController extends Controller
             Log::error('Error declining student', ['error' => $e->getMessage()]);
             return response()->json([
                 'message' => 'Failed to decline student',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Block a student
+     * PUT /api/admin/students/{user_id}/block
+     */
+    public function blockStudent(Request $request, $userId)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Unauthorized. Only admins can block students.',
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'reason' => ['required', 'string', 'max:255'],
+            ]);
+
+            $verification = StudentVerification::where('user_id', $userId)->first();
+
+            if (!$verification) {
+                return response()->json([
+                    'message' => 'Student not found',
+                ], 404);
+            }
+
+            // Mark as blocked
+            $verification->update([
+                'status' => 'blocked',
+                'reason' => $validated['reason'],
+            ]);
+
+            // Deactivate user account
+            User::where('user_id', $userId)->update([
+                'is_active' => false,
+            ]);
+
+            // Log the action
+            Log::info('Student blocked', [
+                'admin_id' => $request->user()->user_id,
+                'student_user_id' => $userId,
+                'reason' => $validated['reason'],
+            ]);
+
+            return response()->json([
+                'message' => 'Student blocked successfully',
+                'data' => [
+                    'user_id' => $userId,
+                    'status' => 'blocked',
+                    'reason' => $validated['reason'],
+                    'is_active' => false,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error blocking student', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to block student',
                 'error' => $e->getMessage(),
             ], 500);
         }
