@@ -22,7 +22,7 @@ class ItemsController extends Controller
             $validated = $request->validate([
                 'title' => ['required', 'string', 'max:255'],
                 'description' => ['required', 'string', 'max:1000'],
-                'category' => ['required', 'string', 'max:100'],
+                'category_id' => ['required', 'integer', 'exists:categories,category_id'],
                 'price_points' => ['required', 'integer', 'min:0'],
                 'photos' => ['required'],
             ]);
@@ -74,7 +74,7 @@ class ItemsController extends Controller
                 'seller_id' => $request->user()->user_id,
                 'title' => $validated['title'],
                 'description' => $validated['description'],
-                'category' => $validated['category'],
+                'category_id' => $validated['category_id'],
                 'price_points' => $validated['price_points'],
                 'markup_points' => 0,
                 'status' => 'private',
@@ -123,7 +123,7 @@ class ItemsController extends Controller
                     'seller_id' => $item->seller_id,
                     'title' => $item->title,
                     'description' => $item->description,
-                    'category' => $item->category,
+                    'category_id' => $item->category_id,
                     'price_points' => $item->price_points,
                     'status' => $item->status,
                     'photos' => $photoUrls,
@@ -162,8 +162,15 @@ class ItemsController extends Controller
                 $query->where('status', $request->query('status'));
             }
 
+            if ($request->has('category_id')) {
+                $query->where('category_id', $request->query('category_id'));
+            }
+
             if ($request->has('category')) {
-                $query->where('category', 'like', '%' . $request->query('category') . '%');
+                // Filter by category name for backwards compatibility
+                $query->whereHas('category', function ($q) {
+                    $q->where('name', 'like', '%' . request()->query('category') . '%');
+                });
             }
 
             if ($request->has('price_min')) {
@@ -187,7 +194,7 @@ class ItemsController extends Controller
                         'seller_email' => $item->seller->email,
                         'title' => $item->title,
                         'description' => $item->description,
-                        'category' => $item->category,
+                        'category_id' => $item->category_id,
                         'price_points' => $item->price_points,
                         'markup_points' => $item->markup_points,
                         'status' => $item->status,
@@ -248,7 +255,7 @@ class ItemsController extends Controller
                     'seller_email' => $item->seller->email,
                     'title' => $item->title,
                     'description' => $item->description,
-                    'category' => $item->category,
+                    'category_id' => $item->category_id,
                     'price_points' => $item->price_points,
                     'markup_points' => $item->markup_points,
                     'status' => $item->status,
@@ -293,7 +300,7 @@ class ItemsController extends Controller
             $validated = $request->validate([
                 'title' => ['string', 'max:255'],
                 'description' => ['string', 'max:1000'],
-                'category' => ['string', 'max:100'],
+                'category_id' => ['integer', 'exists:categories,category_id'],
                 'price_points' => ['integer', 'min:0'],
                 'status' => ['in:private,acquired,public,reserved,sold'],
             ]);
@@ -309,7 +316,7 @@ class ItemsController extends Controller
                     'item_id' => $item->item_id,
                     'title' => $item->title,
                     'description' => $item->description,
-                    'category' => $item->category,
+                    'category_id' => $item->category_id,
                     'price_points' => $item->price_points,
                     'status' => $item->status,
                     'updated_at' => $item->updated_at,
