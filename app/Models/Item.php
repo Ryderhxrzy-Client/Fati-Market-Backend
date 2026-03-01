@@ -18,7 +18,7 @@ class Item extends Model
         'seller_id',
         'title',
         'description',
-        'category',
+        'category_id',
         'status',
         'price_points',
         'markup_points',
@@ -30,6 +30,14 @@ class Item extends Model
     public function seller()
     {
         return $this->belongsTo(User::class, 'seller_id', 'user_id');
+    }
+
+    /**
+     * Get the category
+     */
+    public function category()
+    {
+        return $this->belongsTo(Category::class, 'category_id', 'category_id');
     }
 
     /**
