@@ -17,7 +17,7 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/categories', [CategoriesController::class, 'getAllCategories']);
 Route::get('/categories/{category_id}', [CategoriesController::class, 'getCategoryById']);
 
-// Public items routes (can view items without auth)
+// Public items routes (can view items without auth, but supports optional Sanctum auth)
 Route::get('/items', [ItemsController::class, 'getAllItems']);
 Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 

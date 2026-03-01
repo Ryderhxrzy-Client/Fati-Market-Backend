@@ -152,6 +152,20 @@ class ItemsController extends Controller
     public function getAllItems(Request $request)
     {
         try {
+            // Try to authenticate user from Bearer token if provided
+            $user = null;
+            if ($request->bearerToken()) {
+                // Validate Sanctum token
+                try {
+                    $personalAccessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
+                    if ($personalAccessToken) {
+                        $user = $personalAccessToken->tokenable;
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Invalid token provided', ['error' => $e->getMessage()]);
+                }
+            }
+
             // Build query
             $query = Item::with([
                 'seller' => function ($q) {
@@ -175,13 +189,13 @@ class ItemsController extends Controller
 
                 if ($status === 'private') {
                     // For private items, only show current user's items
-                    if (!$request->user()) {
+                    if (!$user) {
                         return response()->json([
                             'message' => 'Authentication required to view private items',
                         ], 401);
                     }
                     $query->where('status', 'private')
-                        ->where('seller_id', $request->user()->user_id);
+                        ->where('seller_id', $user->user_id);
                 } else {
                     // For public, acquired, reserved, sold - show all items
                     $query->where('status', $status);
