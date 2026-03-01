@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\ServiceProvider;
 
 class BroadcastServiceProvider extends ServiceProvider
@@ -12,8 +11,6 @@ class BroadcastServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Load channel definitions
-        // Note: Broadcasting auth routes are defined in routes/api.php to ensure Sanctum authentication
-        require base_path('routes/channels.php');
+        // Pusher broadcasting has been removed
     }
 }

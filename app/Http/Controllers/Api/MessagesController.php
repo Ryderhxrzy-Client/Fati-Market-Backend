@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\User;
@@ -41,11 +40,8 @@ class MessagesController extends Controller
                 'sent_at' => now(),
             ]);
 
-            // Reload message with relationships for broadcasting
+            // Reload message with relationships
             $newMessage->load(['sender.studentInfo', 'receiver.studentInfo', 'item']);
-
-            // Broadcast message to real-time listeners
-            broadcast(new MessageSent($newMessage))->toOthers();
 
             Log::info('Message sent', [
                 'sender_id' => $request->user()->user_id,
