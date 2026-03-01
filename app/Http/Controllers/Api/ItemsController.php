@@ -142,7 +142,12 @@ class ItemsController extends Controller
 
     /**
      * Get all items with optional filters
-     * GET /api/items?status=public&category=books&price_min=0&price_max=1000
+     * GET /api/items?status=public&category_id=1
+     *
+     * Status filter:
+     * - private: Only shows current user's private items (requires authentication)
+     * - public: Shows all public items
+     * - acquired, reserved, sold: Shows all items with these statuses
      */
     public function getAllItems(Request $request)
     {
@@ -157,11 +162,36 @@ class ItemsController extends Controller
                 }
             ]);
 
-            // Apply filters
+            // Status filtering logic
             if ($request->has('status')) {
-                $query->where('status', $request->query('status'));
+                $status = $request->query('status');
+
+                // Validate status is allowed
+                if (!in_array($status, ['private', 'public', 'acquired', 'reserved', 'sold'])) {
+                    return response()->json([
+                        'message' => 'Invalid status. Allowed values: private, public, acquired, reserved, sold',
+                    ], 422);
+                }
+
+                if ($status === 'private') {
+                    // For private items, only show current user's items
+                    if (!$request->user()) {
+                        return response()->json([
+                            'message' => 'Authentication required to view private items',
+                        ], 401);
+                    }
+                    $query->where('status', 'private')
+                        ->where('seller_id', $request->user()->user_id);
+                } else {
+                    // For public, acquired, reserved, sold - show all items
+                    $query->where('status', $status);
+                }
+            } else {
+                // If no status specified, default to showing public items
+                $query->where('status', 'public');
             }
 
+            // Category filtering
             if ($request->has('category_id')) {
                 $query->where('category_id', $request->query('category_id'));
             }
@@ -173,6 +203,7 @@ class ItemsController extends Controller
                 });
             }
 
+            // Price filtering (for private items only)
             if ($request->has('price_min')) {
                 $query->where('price_points', '>=', $request->query('price_min'));
             }
@@ -188,6 +219,16 @@ class ItemsController extends Controller
             // Get items ordered by newest first
             $items = $query->orderBy('created_at', 'desc')->get()
                 ->map(function ($item) {
+                    // For private items, show price_points
+                    // For public/acquired/reserved/sold items, show markup_points
+                    if ($item->status === 'private') {
+                        $points = $item->price_points;
+                        $points_label = 'price_points';
+                    } else {
+                        $points = $item->markup_points;
+                        $points_label = 'markup_points';
+                    }
+
                     return [
                         'item_id' => $item->item_id,
                         'seller_id' => $item->seller_id,
@@ -195,8 +236,7 @@ class ItemsController extends Controller
                         'title' => $item->title,
                         'description' => $item->description,
                         'category_id' => $item->category_id,
-                        'price_points' => $item->price_points,
-                        'markup_points' => $item->markup_points,
+                        $points_label => $points,
                         'status' => $item->status,
                         'photos' => $item->photos->pluck('photo_url')->toArray(),
                         'created_at' => $item->created_at,
@@ -208,10 +248,8 @@ class ItemsController extends Controller
                 'data' => $items,
                 'count' => $items->count(),
                 'filters' => [
-                    'status' => $request->query('status'),
-                    'category' => $request->query('category'),
-                    'price_min' => $request->query('price_min'),
-                    'price_max' => $request->query('price_max'),
+                    'status' => $request->query('status') ?? 'public',
+                    'category_id' => $request->query('category_id'),
                     'seller_id' => $request->query('seller_id'),
                 ]
             ], 200);
