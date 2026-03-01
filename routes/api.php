@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\MessagesController;
 use App\Http\Controllers\Api\ItemsController;
 use App\Http\Controllers\Api\CategoriesController;
+use App\Http\Controllers\Api\FavoritesController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -53,5 +54,13 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [ItemsController::class, 'createItem']);
         Route::put('/{item_id}', [ItemsController::class, 'updateItem']);
         Route::delete('/{item_id}', [ItemsController::class, 'deleteItem']);
+    });
+
+    // Favorites routes
+    Route::prefix('favorites')->group(function () {
+        Route::post('/', [FavoritesController::class, 'addFavorite']);
+        Route::get('/', [FavoritesController::class, 'getFavorites']);
+        Route::delete('/{item_id}', [FavoritesController::class, 'removeFavorite']);
+        Route::get('/{item_id}/check', [FavoritesController::class, 'checkFavorite']);
     });
 });
