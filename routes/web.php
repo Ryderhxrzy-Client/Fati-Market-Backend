@@ -14,13 +14,24 @@ Route::get('/welcome', function () {
 
 // Broadcasting authorization endpoint (at root level for Pusher)
 Route::post('/broadcasting/auth', function (Request $request) {
-    // Explicitly ensure Sanctum user is available
-    $user = auth('sanctum')->user();
+    try {
+        // Explicitly ensure Sanctum user is available
+        $user = auth('sanctum')->user();
 
-    if (!$user) {
-        return response()->json(['message' => 'Unauthenticated'], 401);
+        if (!$user) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
+        }
+
+        // Perform the broadcast authentication
+        $auth = Broadcast::auth($request);
+
+        // Ensure response is JSON
+        if (is_array($auth) || $auth instanceof \ArrayAccess) {
+            return response()->json($auth);
+        }
+
+        return $auth;
+    } catch (\Exception $e) {
+        return response()->json(['message' => 'Authorization failed', 'error' => $e->getMessage()], 403);
     }
-
-    // Perform the broadcast authentication
-    return Broadcast::auth($request);
-})->middleware('auth:sanctum');
+});

@@ -16,19 +16,6 @@ Route::post('/login', [AuthController::class, 'login']);
 Route::get('/items', [ItemsController::class, 'getAllItems']);
 Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 
-// Broadcasting authorization endpoint (for Pusher real-time)
-Route::post('/broadcasting/auth', function (Request $request) {
-    // Explicitly ensure Sanctum user is available
-    $user = auth('sanctum')->user();
-
-    if (!$user) {
-        return response()->json(['message' => 'Unauthenticated'], 401);
-    }
-
-    // Perform the broadcast authentication
-    return Broadcast::auth($request);
-})->middleware('auth:sanctum');
-
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
     // Profile routes
