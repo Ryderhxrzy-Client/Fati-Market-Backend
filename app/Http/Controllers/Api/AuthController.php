@@ -20,10 +20,18 @@ class AuthController extends Controller
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'unique:users', 'ends_with:@student.fatima.edu.ph'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/',
+            ],
             'student_id_photo' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
             'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
             'verification_use' => ['required', 'in:registration_card,student_id'],
+        ], [
+            'password.regex' => 'Password must contain at least 8 characters, including uppercase letter, lowercase letter, number, and special character (@$!%*?&).',
         ]);
 
         try {
