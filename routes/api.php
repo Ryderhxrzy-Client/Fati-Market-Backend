@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\MessagesController;
 use App\Http\Controllers\Api\ItemsController;
+use App\Http\Controllers\Api\CategoriesController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -11,6 +12,10 @@ use Illuminate\Support\Facades\Route;
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// Public categories routes (can view categories without auth)
+Route::get('/categories', [CategoriesController::class, 'getAllCategories']);
+Route::get('/categories/{category_id}', [CategoriesController::class, 'getCategoryById']);
 
 // Public items routes (can view items without auth)
 Route::get('/items', [ItemsController::class, 'getAllItems']);
