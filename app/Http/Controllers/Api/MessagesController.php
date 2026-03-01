@@ -80,6 +80,12 @@ class MessagesController extends Controller
         try {
             $userId = $request->user()->user_id;
 
+            // Mark all unread messages as read for current user (receiver)
+            Message::where('item_id', $itemId)
+                ->where('receiver_id', $userId)
+                ->where('is_read', false)
+                ->update(['is_read' => true]);
+
             // Get messages for this item where current user is sender or receiver
             $messages = Message::with([
                 'sender' => function ($query) {
@@ -178,6 +184,11 @@ class MessagesController extends Controller
                     $latestMessage = $messages->first();
                     $otherUser = $latestMessage->sender_id === $userId ? $latestMessage->receiver : $latestMessage->sender;
 
+                    // Count unread messages for this conversation
+                    $unreadCount = $messages->filter(function ($msg) use ($userId) {
+                        return $msg->receiver_id === $userId && $msg->is_read === false;
+                    })->count();
+
                     return [
                         'other_user_id' => $otherUserId,
                         'other_user_email' => $otherUser->email,
@@ -189,6 +200,7 @@ class MessagesController extends Controller
                         'latest_message' => $latestMessage->message,
                         'last_message_at' => $latestMessage->sent_at,
                         'message_count' => $messages->count(),
+                        'unread_count' => $unreadCount,
                     ];
                 })
                 ->values();
