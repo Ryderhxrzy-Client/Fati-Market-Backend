@@ -40,6 +40,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // Admin items management routes
     Route::prefix('admin/items')->group(function () {
         Route::get('/', [ItemsController::class, 'adminGetAllItems']);
+        Route::put('/{item_id}', [ItemsController::class, 'adminUpdateItem']);
     });
 
     // Messages routes

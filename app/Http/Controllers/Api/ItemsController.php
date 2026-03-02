@@ -541,4 +541,70 @@ class ItemsController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Admin: Update any item (override ownership check)
+     * PUT /api/admin/items/{item_id}
+     */
+    public function adminUpdateItem(Request $request, $itemId)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            $item = Item::where('item_id', $itemId)->first();
+
+            if (!$item) {
+                return response()->json([
+                    'message' => 'Item not found',
+                ], 404);
+            }
+
+            // Validate request
+            $validated = $request->validate([
+                'title' => ['string', 'max:255'],
+                'description' => ['string', 'max:1000'],
+                'category_id' => ['integer', 'exists:categories,category_id'],
+                'price_points' => ['integer', 'min:0'],
+                'markup_points' => ['integer', 'min:0'],
+                'status' => ['in:private,acquired,public,reserved,sold'],
+            ]);
+
+            Log::info('Admin updating item', [
+                'item_id' => $itemId,
+                'admin_id' => $request->user()->user_id,
+                'original_seller_id' => $item->seller_id
+            ]);
+
+            // Update only provided fields
+            $item->update($validated);
+
+            return response()->json([
+                'message' => 'Admin: Item updated successfully',
+                'data' => [
+                    'item_id' => $item->item_id,
+                    'seller_id' => $item->seller_id,
+                    'title' => $item->title,
+                    'description' => $item->description,
+                    'category_id' => $item->category_id,
+                    'price_points' => $item->price_points,
+                    'markup_points' => $item->markup_points,
+                    'status' => $item->status,
+                    'updated_at' => $item->updated_at,
+                    'updated_by_admin' => $request->user()->user_id,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error updating admin item', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to update item',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
