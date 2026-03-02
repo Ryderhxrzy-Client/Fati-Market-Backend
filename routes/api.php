@@ -37,6 +37,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{user_id}', [StudentManagementController::class, 'getStudentDetails']);
     });
 
+    // Admin items management routes
+    Route::prefix('admin/items')->group(function () {
+        Route::get('/', [ItemsController::class, 'adminGetAllItems']);
+    });
+
     // Messages routes
     Route::prefix('messages')->group(function () {
         Route::post('/{item_id}', [MessagesController::class, 'sendMessage']);
