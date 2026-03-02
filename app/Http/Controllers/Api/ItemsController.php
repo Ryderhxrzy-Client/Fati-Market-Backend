@@ -426,4 +426,119 @@ class ItemsController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Admin: Get all items by status (no user filtering)
+     * GET /api/admin/items?status=private&category_id=1
+     */
+    public function adminGetAllItems(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            // Build query
+            $query = Item::with([
+                'seller' => function ($q) {
+                    $q->select('user_id', 'email');
+                },
+                'photos' => function ($q) {
+                    $q->select('photo_id', 'item_id', 'photo_url');
+                }
+            ]);
+
+            // Status filtering (required)
+            if ($request->has('status')) {
+                $status = $request->query('status');
+
+                // Validate status is allowed
+                if (!in_array($status, ['private', 'public', 'acquired', 'reserved', 'sold'])) {
+                    return response()->json([
+                        'message' => 'Invalid status. Allowed values: private, public, acquired, reserved, sold',
+                    ], 422);
+                }
+
+                $query->where('status', $status);
+            } else {
+                // If no status specified, return all items regardless of status
+                // Admin can see everything
+            }
+
+            // Category filtering
+            if ($request->has('category_id')) {
+                $query->where('category_id', $request->query('category_id'));
+            }
+
+            if ($request->has('category')) {
+                // Filter by category name
+                $query->whereHas('category', function ($q) {
+                    $q->where('name', 'like', '%' . request()->query('category') . '%');
+                });
+            }
+
+            // Price filtering
+            if ($request->has('price_min')) {
+                $query->where('price_points', '>=', $request->query('price_min'));
+            }
+
+            if ($request->has('price_max')) {
+                $query->where('price_points', '<=', $request->query('price_max'));
+            }
+
+            // Seller filtering
+            if ($request->has('seller_id')) {
+                $query->where('seller_id', $request->query('seller_id'));
+            }
+
+            // Get items ordered by newest first
+            $items = $query->orderBy('created_at', 'desc')->get()
+                ->map(function ($item) {
+                    // For private items, show price_points
+                    // For public/acquired/reserved/sold items, show markup_points
+                    if ($item->status === 'private') {
+                        $points = $item->price_points;
+                        $points_label = 'price_points';
+                    } else {
+                        $points = $item->markup_points;
+                        $points_label = 'markup_points';
+                    }
+
+                    return [
+                        'item_id' => $item->item_id,
+                        'seller_id' => $item->seller_id,
+                        'seller_email' => $item->seller->email,
+                        'title' => $item->title,
+                        'description' => $item->description,
+                        'category_id' => $item->category_id,
+                        $points_label => $points,
+                        'status' => $item->status,
+                        'photos' => $item->photos->pluck('photo_url')->toArray(),
+                        'created_at' => $item->created_at,
+                        'updated_at' => $item->updated_at,
+                    ];
+                });
+
+            return response()->json([
+                'message' => 'Admin: Items retrieved successfully',
+                'data' => $items,
+                'count' => $items->count(),
+                'filters' => [
+                    'status' => $request->query('status') ?? 'all',
+                    'category_id' => $request->query('category_id'),
+                    'seller_id' => $request->query('seller_id'),
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting admin items', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to retrieve items',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
