@@ -37,6 +37,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/{user_id}', [StudentManagementController::class, 'getStudentDetails']);
     });
 
+    // Admin dashboard
+    Route::get('/admin/dashboard', [AuthController::class, 'getDashboardStats']);
+
     // Admin items management routes
     Route::prefix('admin/items')->group(function () {
         Route::get('/', [ItemsController::class, 'adminGetAllItems']);
