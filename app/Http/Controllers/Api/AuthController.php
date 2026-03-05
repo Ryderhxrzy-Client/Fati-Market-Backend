@@ -308,4 +308,94 @@ class AuthController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Admin Dashboard Statistics
+     * GET /api/admin/dashboard
+     */
+    public function getDashboardStats(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            // Get statistics
+            $stats = [
+                'users' => [
+                    'total_students' => User::where('role', 'student')->count(),
+                    'active_students' => User::where('role', 'student')->where('is_active', true)->count(),
+                    'pending_students' => StudentVerification::where('status', 'pending')->count(),
+                    'verified_students' => StudentVerification::where('is_verified', true)->count(),
+                ],
+                'items' => [
+                    'total_items' => \App\Models\Item::count(),
+                    'private_items' => \App\Models\Item::where('status', 'private')->count(),
+                    'public_items' => \App\Models\Item::where('status', 'public')->count(),
+                    'acquired_items' => \App\Models\Item::where('status', 'acquired')->count(),
+                    'reserved_items' => \App\Models\Item::where('status', 'reserved')->count(),
+                    'sold_items' => \App\Models\Item::where('status', 'sold')->count(),
+                ],
+                'recent_activities' => [
+                    'recent_registrations' => User::where('role', 'student')
+                        ->orderBy('created_at', 'desc')
+                        ->limit(5)
+                        ->with('studentInformation')
+                        ->get(['user_id', 'email', 'created_at'])
+                        ->map(function ($user) {
+                            return [
+                                'user_id' => $user->user_id,
+                                'email' => $user->email,
+                                'name' => $user->studentInformation?->first_name . ' ' . $user->studentInformation?->last_name,
+                                'created_at' => $user->created_at,
+                            ];
+                        }),
+                    'recent_items' => \App\Models\Item::with(['seller', 'photos'])
+                        ->orderBy('created_at', 'desc')
+                        ->limit(5)
+                        ->get()
+                        ->map(function ($item) {
+                            return [
+                                'item_id' => $item->item_id,
+                                'title' => $item->title,
+                                'seller' => $item->seller->email,
+                                'status' => $item->status,
+                                'price_points' => $item->price_points,
+                                'created_at' => $item->created_at,
+                                'photos' => $item->photos->pluck('photo_url')->toArray(),
+                            ];
+                        }),
+                    'pending_verifications' => StudentVerification::with(['user.studentInformation'])
+                        ->where('status', 'pending')
+                        ->orderBy('created_at', 'desc')
+                        ->limit(5)
+                        ->get()
+                        ->map(function ($verification) {
+                            return [
+                                'verification_id' => $verification->student_verification_id,
+                                'user_id' => $verification->user_id,
+                                'student_name' => $verification->user->studentInformation?->first_name . ' ' . $verification->user->studentInformation?->last_name,
+                                'email' => $verification->user->email,
+                                'verification_use' => $verification->verification_use,
+                                'created_at' => $verification->created_at,
+                            ];
+                        }),
+                ],
+            ];
+
+            return response()->json([
+                'message' => 'Dashboard statistics retrieved successfully',
+                'data' => $stats,
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve dashboard statistics',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
