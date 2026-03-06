@@ -27,6 +27,7 @@ Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 Route::middleware('auth:sanctum')->group(function () {
     // Profile routes
     Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
+    Route::get('/wallet', [AuthController::class, 'getWalletBalance']);
 
     // Admin student management routes
     Route::prefix('admin/students')->group(function () {
