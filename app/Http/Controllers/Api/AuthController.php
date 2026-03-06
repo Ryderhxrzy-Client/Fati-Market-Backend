@@ -310,6 +310,34 @@ class AuthController extends Controller
     }
 
     /**
+     * Get wallet balance for authenticated user
+     * GET /api/wallet
+     */
+    public function getWalletBalance(Request $request)
+    {
+        try {
+            $user = $request->user();
+
+            return response()->json([
+                'message' => 'Wallet balance retrieved successfully',
+                'data' => [
+                    'user_id' => $user->user_id,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'wallet_points' => $user->wallet_points,
+                    'updated_at' => $user->updated_at,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve wallet balance',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Admin Dashboard Statistics
      * GET /api/admin/dashboard
      */
