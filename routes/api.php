@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\MessagesController;
 use App\Http\Controllers\Api\ItemsController;
 use App\Http\Controllers\Api\CategoriesController;
 use App\Http\Controllers\Api\FavoritesController;
+use App\Http\Controllers\Api\TransactionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -72,5 +73,27 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [FavoritesController::class, 'getFavorites']);
         Route::delete('/{item_id}', [FavoritesController::class, 'removeFavorite']);
         Route::get('/{item_id}/check', [FavoritesController::class, 'checkFavorite']);
+    });
+
+    // Transactions routes
+    Route::prefix('transactions')->group(function () {
+        Route::post('/', [TransactionController::class, 'createTransaction']);
+        Route::get('/', [TransactionController::class, 'getUserTransactions']);
+    });
+
+    // Points routes
+    Route::prefix('points')->group(function () {
+        Route::get('/history', [TransactionController::class, 'getPointHistory']);
+    });
+
+    // Admin transaction management routes
+    Route::prefix('admin/transactions')->group(function () {
+        Route::get('/', [TransactionController::class, 'getAllTransactions']);
+        Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
+    });
+
+    // Admin points management routes
+    Route::prefix('admin')->group(function () {
+        Route::post('/send-points', [TransactionController::class, 'sendPoints']);
     });
 });
