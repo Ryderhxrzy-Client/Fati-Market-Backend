@@ -507,7 +507,7 @@ class ItemsController extends Controller
                         $points_label = 'markup_points';
                     }
 
-                    return [
+                    $result = [
                         'item_id' => $item->item_id,
                         'seller_id' => $item->seller_id,
                         'seller_email' => $item->seller->email,
@@ -515,14 +515,18 @@ class ItemsController extends Controller
                         'description' => $item->description,
                         'category_id' => $item->category_id,
                         $points_label => $points,
-                        // Show both price_points and markup_points for private and acquired items only
-                        'price_points' => ($item->status === 'private' || $item->status === 'acquired') ? $item->price_points : null,
-                        'markup_points' => ($item->status === 'private' || $item->status === 'acquired') ? $item->markup_points : null,
                         'status' => $item->status,
                         'photos' => $item->photos->pluck('photo_url')->toArray(),
                         'created_at' => $item->created_at,
                         'updated_at' => $item->updated_at,
                     ];
+
+                    // Add markup_points for private and acquired items only (price_points is already the main field)
+                    if ($item->status === 'private' || $item->status === 'acquired') {
+                        $result['markup_points'] = $item->markup_points;
+                    }
+
+                    return $result;
                 });
 
             return response()->json([
