@@ -497,9 +497,9 @@ class ItemsController extends Controller
             // Get items ordered by newest first
             $items = $query->orderBy('created_at', 'desc')->get()
                 ->map(function ($item) {
-                    // For private items, show price_points
-                    // For public/acquired/reserved/sold items, show markup_points
-                    if ($item->status === 'private') {
+                    // For private and acquired items, show price_points
+                    // For public/reserved/sold items, show markup_points
+                    if ($item->status === 'private' || $item->status === 'acquired') {
                         $points = $item->price_points;
                         $points_label = 'price_points';
                     } else {
@@ -515,6 +515,9 @@ class ItemsController extends Controller
                         'description' => $item->description,
                         'category_id' => $item->category_id,
                         $points_label => $points,
+                        // Show both price_points and markup_points for private and acquired items only
+                        'price_points' => ($item->status === 'private' || $item->status === 'acquired') ? $item->price_points : null,
+                        'markup_points' => ($item->status === 'private' || $item->status === 'acquired') ? $item->markup_points : null,
                         'status' => $item->status,
                         'photos' => $item->photos->pluck('photo_url')->toArray(),
                         'created_at' => $item->created_at,
