@@ -422,4 +422,85 @@ class TransactionController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Check if points have been sent for a specific item
+     * GET /api/admin/item/{item_id}/points-status
+     */
+    public function checkItemPointsStatus(Request $request, $item_id)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            // Check if item exists
+            $item = \App\Models\Item::where('item_id', $item_id)->first();
+            if (!$item) {
+                return response()->json([
+                    'message' => 'Item not found',
+                ], 404);
+            }
+
+            // Check if there are any point records for this item
+            $pointRecords = \App\Models\Point::where('related_item_id', $item_id)->get();
+            
+            // Check if there are any transaction records for this item
+            $transactionRecords = \App\Models\Transaction::where('item_id', $item_id)->get();
+
+            // Get the most recent point transaction for this item
+            $latestPointRecord = $pointRecords->sortByDesc('created_at')->first();
+            
+            // Check if admin has sent points for this item
+            $adminSentPoints = $pointRecords->where('reason', 'sale')->isNotEmpty() || 
+                             $pointRecords->where('reason', 'purchase')->isNotEmpty();
+
+            return response()->json([
+                'message' => 'Item points status retrieved successfully',
+                'data' => [
+                    'item_id' => $item_id,
+                    'item_title' => $item->title,
+                    'item_status' => $item->status,
+                    'points_sent' => $adminSentPoints,
+                    'point_records_count' => $pointRecords->count(),
+                    'transaction_records_count' => $transactionRecords->count(),
+                    'latest_point_record' => $latestPointRecord ? [
+                        'point_id' => $latestPointRecord->point_id,
+                        'user_id' => $latestPointRecord->user_id,
+                        'points_change' => $latestPointRecord->points_change,
+                        'reason' => $latestPointRecord->reason,
+                        'created_at' => $latestPointRecord->created_at,
+                    ] : null,
+                    'all_point_records' => $pointRecords->map(function ($point) {
+                        return [
+                            'point_id' => $point->point_id,
+                            'user_id' => $point->user_id,
+                            'points_change' => $point->points_change,
+                            'reason' => $point->reason,
+                            'created_at' => $point->created_at,
+                        ];
+                    }),
+                    'transaction_records' => $transactionRecords->map(function ($transaction) {
+                        return [
+                            'transaction_id' => $transaction->transaction_id,
+                            'buyer_id' => $transaction->buyer_id,
+                            'seller_id' => $transaction->seller_id,
+                            'points_used' => $transaction->points_used,
+                            'status' => $transaction->status,
+                            'transaction_date' => $transaction->transaction_date,
+                        ];
+                    }),
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to check item points status',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }
