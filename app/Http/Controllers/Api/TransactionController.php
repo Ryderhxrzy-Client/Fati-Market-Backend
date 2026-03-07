@@ -318,6 +318,25 @@ class TransactionController extends Controller
                 ], 400);
             }
 
+            // Check if points have already been sent for this item
+            if (!empty($validated['related_item_id'])) {
+                $existingPointRecords = \App\Models\Point::where('related_item_id', $validated['related_item_id'])
+                    ->whereIn('reason', ['sale', 'purchase'])
+                    ->get();
+
+                if ($existingPointRecords->isNotEmpty()) {
+                    return response()->json([
+                        'message' => 'Points have already been sent for this item',
+                        'error' => 'duplicate_transaction',
+                        'item_id' => $validated['related_item_id'],
+                        'existing_records' => $existingPointRecords->count(),
+                        'latest_record' => $existingPointRecords->sortByDesc('created_at')->first()->only([
+                            'point_id', 'user_id', 'points_change', 'reason', 'created_at'
+                        ])
+                    ], 409); // 409 Conflict
+                }
+            }
+
             // Deduct points from admin's wallet
             $admin->decrement('wallet_points', $validated['points']);
 
