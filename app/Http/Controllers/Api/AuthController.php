@@ -371,13 +371,13 @@ class AuthController extends Controller
                     'recent_registrations' => User::where('role', 'student')
                         ->orderBy('created_at', 'desc')
                         ->limit(5)
-                        ->with('studentInformation')
+                        ->with('studentInfo')
                         ->get(['user_id', 'email', 'created_at'])
                         ->map(function ($user) {
                             return [
                                 'user_id' => $user->user_id,
                                 'email' => $user->email,
-                                'name' => $user->studentInformation?->first_name . ' ' . $user->studentInformation?->last_name,
+                                'name' => $user->studentInfo?->first_name . ' ' . $user->studentInfo?->last_name,
                                 'created_at' => $user->created_at,
                             ];
                         }),
@@ -396,7 +396,7 @@ class AuthController extends Controller
                                 'photos' => $item->photos->pluck('photo_url')->toArray(),
                             ];
                         }),
-                    'pending_verifications' => StudentVerification::with(['user.studentInformation'])
+                    'pending_verifications' => StudentVerification::with(['user.studentInfo'])
                         ->where('status', 'pending')
                         ->orderBy('created_at', 'desc')
                         ->limit(5)
@@ -405,7 +405,7 @@ class AuthController extends Controller
                             return [
                                 'verification_id' => $verification->student_verification_id,
                                 'user_id' => $verification->user_id,
-                                'student_name' => $verification->user->studentInformation?->first_name . ' ' . $verification->user->studentInformation?->last_name,
+                                'student_name' => $verification->user->studentInfo?->first_name . ' ' . $verification->user->studentInfo?->last_name,
                                 'email' => $verification->user->email,
                                 'verification_use' => $verification->verification_use,
                                 'created_at' => $verification->created_at,
