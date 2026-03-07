@@ -349,6 +349,24 @@ class TransactionController extends Controller
                 'related_item_id' => $validated['related_item_id'] ?? null,
             ]);
 
+            // Create transaction record if this is a sale/purchase with related item
+            if (in_array($validated['reason'], ['sale', 'purchase']) && !empty($validated['related_item_id'])) {
+                try {
+                    $transaction = \App\Models\Transaction::create([
+                        'item_id' => $validated['related_item_id'],
+                        'buyer_id' => $validated['reason'] === 'sale' ? $admin->user_id : $validated['user_id'],
+                        'seller_id' => $validated['reason'] === 'sale' ? $validated['user_id'] : $admin->user_id,
+                        'payment_method' => 'points',
+                        'points_used' => $validated['points'],
+                        'status' => 'completed',
+                    ]);
+                    Log::info('Transaction record created', ['transaction_id' => $transaction->transaction_id]);
+                } catch (\Exception $e) {
+                    Log::error('Failed to create transaction record', ['error' => $e->getMessage()]);
+                    // Don't throw here - points were already transferred, just log the error
+                }
+            }
+
             return response()->json([
                 'message' => 'Points sent successfully',
                 'data' => [
