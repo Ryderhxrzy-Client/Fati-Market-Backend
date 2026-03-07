@@ -68,4 +68,28 @@ class User extends Authenticatable
     {
         return $this->hasOne(StudentVerification::class, 'user_id', 'user_id');
     }
+
+    /**
+     * Get transactions where user is buyer
+     */
+    public function transactionsAsBuyer()
+    {
+        return $this->hasMany(Transaction::class, 'buyer_id', 'user_id');
+    }
+
+    /**
+     * Get transactions where user is seller
+     */
+    public function transactionsAsSeller()
+    {
+        return $this->hasMany(Transaction::class, 'seller_id', 'user_id');
+    }
+
+    /**
+     * Get items sold by user
+     */
+    public function soldItems()
+    {
+        return $this->hasMany(Item::class, 'seller_id', 'user_id');
+    }
 }
