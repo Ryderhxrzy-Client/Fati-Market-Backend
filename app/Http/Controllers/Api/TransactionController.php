@@ -666,14 +666,11 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'Admin access required'], 403);
             }
 
-            $totalProfit = Transaction::where('status', 'completed')
-                ->join('items', 'transactions.item_id', '=', 'items.item_id')
-                ->sum('items.markup_points');
+            $totalProfit = \App\Models\Item::where('status', 'sold')->sum('markup_points');
 
-            $monthlyProfit = Transaction::where('status', 'completed')
-                ->where('transaction_date', '>=', now()->subMonth())
-                ->join('items', 'transactions.item_id', '=', 'items.item_id')
-                ->sum('items.markup_points');
+            $monthlyProfit = \App\Models\Item::where('status', 'sold')
+                ->where('updated_at', '>=', now()->subMonth())
+                ->sum('markup_points');
 
             $transactionCount = Transaction::where('status', 'completed')->count();
 
@@ -689,7 +686,7 @@ class TransactionController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error getting profit summary', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'Failed to retrieve profit summary'], 500);
+            return response()->json(['message' => 'Failed to retrieve profit summary', 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -747,17 +744,16 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'Admin access required'], 403);
             }
 
-            $totalMarkupProfit = Item::where('status', 'sold')->sum('markup_points');
+            $totalMarkupProfit = \App\Models\Item::where('status', 'sold')->sum('markup_points');
             
-            $profitByMonth = Transaction::where('status', 'completed')
-                ->join('items', 'transactions.item_id', '=', 'items.item_id')
-                ->selectRaw('DATE_FORMAT(transactions.transaction_date, "%Y-%m") as month, SUM(items.markup_points) as profit')
+            $profitByMonth = \App\Models\Item::where('status', 'sold')
+                ->selectRaw('DATE_FORMAT(updated_at, "%Y-%m") as month, SUM(markup_points) as profit')
                 ->groupBy('month')
                 ->orderBy('month', 'desc')
                 ->limit(12)
                 ->get();
 
-            $topProfitableItems = Item::where('status', 'sold')
+            $topProfitableItems = \App\Models\Item::where('status', 'sold')
                 ->where('markup_points', '>', 0)
                 ->orderBy('markup_points', 'desc')
                 ->limit(10)
@@ -775,7 +771,7 @@ class TransactionController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error getting profit report', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'Failed to retrieve profit report'], 500);
+            return response()->json(['message' => 'Failed to retrieve profit report', 'error' => $e->getMessage()], 500);
         }
     }
 
@@ -803,7 +799,7 @@ class TransactionController extends Controller
                 $totalMarkup = $category->items->sum('markup_points');
                 return [
                     'category_id' => $category->category_id,
-                    'category_name' => $category->category_name,
+                    'category_name' => $category->name,
                     'items_sold' => $category->items_count,
                     'total_markup_profit' => $totalMarkup,
                     'average_markup_per_item' => $category->items_count > 0 ? $totalMarkup / $category->items_count : 0,
@@ -824,7 +820,7 @@ class TransactionController extends Controller
 
         } catch (\Exception $e) {
             Log::error('Error getting category report', ['error' => $e->getMessage()]);
-            return response()->json(['message' => 'Failed to retrieve category report'], 500);
+            return response()->json(['message' => 'Failed to retrieve category report', 'error' => $e->getMessage()], 500);
         }
     }
 
