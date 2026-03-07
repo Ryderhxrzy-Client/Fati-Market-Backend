@@ -326,13 +326,7 @@ class TransactionController extends Controller
 
                 if ($existingPointRecords->isNotEmpty()) {
                     return response()->json([
-                        'message' => 'Points have already been sent for this item',
-                        'error' => 'duplicate_transaction',
-                        'item_id' => $validated['related_item_id'],
-                        'existing_records' => $existingPointRecords->count(),
-                        'latest_record' => $existingPointRecords->sortByDesc('created_at')->first()->only([
-                            'point_id', 'user_id', 'points_change', 'reason', 'created_at'
-                        ])
+                        'message' => 'Points have already been sent for this item'
                     ], 409); // 409 Conflict
                 }
             }
