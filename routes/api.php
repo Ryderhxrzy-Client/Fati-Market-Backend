@@ -93,8 +93,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
     });
 
-    // Admin points management routes
+    // Admin management routes
     Route::prefix('admin')->group(function () {
         Route::post('/send-points', [TransactionController::class, 'sendPoints']);
+        Route::get('/item/{item_id}/points-status', [TransactionController::class, 'checkItemPointsStatus']);
     });
 });
