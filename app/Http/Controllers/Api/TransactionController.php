@@ -437,6 +437,88 @@ class TransactionController extends Controller
     }
 
     /**
+     * Get points given to users (admin only)
+     * GET /api/points/given
+     */
+    public function getPointsGiven(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            $pointsGiven = \App\Models\Point::where('points_change', '>', 0)
+                ->with(['user' => function ($q) {
+                    $q->select('user_id', 'email');
+                }, 'relatedItem' => function ($q) {
+                    $q->select('item_id', 'title');
+                }])
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $totalPointsGiven = $pointsGiven->sum('points_change');
+
+            return response()->json([
+                'message' => 'Points given retrieved successfully',
+                'data' => $pointsGiven,
+                'total_points_given' => $totalPointsGiven,
+                'count' => $pointsGiven->count(),
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting points given', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to retrieve points given',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Get points received by users (admin only)
+     * GET /api/points/received
+     */
+    public function getPointsReceived(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            $pointsReceived = \App\Models\Point::where('points_change', '<', 0)
+                ->with(['user' => function ($q) {
+                    $q->select('user_id', 'email');
+                }, 'relatedItem' => function ($q) {
+                    $q->select('item_id', 'title');
+                }])
+                ->orderBy('created_at', 'desc')
+                ->get();
+
+            $totalPointsReceived = abs($pointsReceived->sum('points_change'));
+
+            return response()->json([
+                'message' => 'Points received retrieved successfully',
+                'data' => $pointsReceived,
+                'total_points_received' => $totalPointsReceived,
+                'count' => $pointsReceived->count(),
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting points received', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to retrieve points received',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Check if points have been sent for a specific item
      * GET /api/admin/item/{item_id}/points-status
      */
@@ -514,6 +596,289 @@ class TransactionController extends Controller
                 'message' => 'Failed to check item points status',
                 'error' => $e->getMessage(),
             ], 500);
+        }
+    }
+
+    /**
+     * Get cash transactions (admin only)
+     * GET /api/admin/transactions/cash
+     */
+    public function getCashTransactions(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $transactions = Transaction::with(['item', 'buyer', 'seller'])
+                ->where('payment_method', 'cash')
+                ->orderBy('transaction_date', 'desc')
+                ->get();
+
+            return response()->json([
+                'message' => 'Cash transactions retrieved successfully',
+                'data' => $transactions,
+                'count' => $transactions->count(),
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting cash transactions', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve cash transactions'], 500);
+        }
+    }
+
+    /**
+     * Get trade transactions (admin only)
+     * GET /api/admin/transactions/trade
+     */
+    public function getTradeTransactions(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $transactions = Transaction::with(['item', 'buyer', 'seller'])
+                ->where('payment_method', 'trade')
+                ->orderBy('transaction_date', 'desc')
+                ->get();
+
+            return response()->json([
+                'message' => 'Trade transactions retrieved successfully',
+                'data' => $transactions,
+                'count' => $transactions->count(),
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting trade transactions', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve trade transactions'], 500);
+        }
+    }
+
+    /**
+     * Get profit summary (admin only)
+     * GET /api/admin/transactions/profit-summary
+     */
+    public function getProfitSummary(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $totalProfit = Transaction::where('status', 'completed')
+                ->join('items', 'transactions.item_id', '=', 'items.item_id')
+                ->sum('items.markup_points');
+
+            $monthlyProfit = Transaction::where('status', 'completed')
+                ->where('transaction_date', '>=', now()->subMonth())
+                ->join('items', 'transactions.item_id', '=', 'items.item_id')
+                ->sum('items.markup_points');
+
+            $transactionCount = Transaction::where('status', 'completed')->count();
+
+            return response()->json([
+                'message' => 'Profit summary retrieved successfully',
+                'data' => [
+                    'total_profit_points' => $totalProfit,
+                    'monthly_profit_points' => $monthlyProfit,
+                    'completed_transactions' => $transactionCount,
+                    'average_profit_per_transaction' => $transactionCount > 0 ? $totalProfit / $transactionCount : 0,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting profit summary', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve profit summary'], 500);
+        }
+    }
+
+    /**
+     * Get sales report (admin only)
+     * GET /api/admin/reports/sales
+     */
+    public function getSalesReport(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $totalItemsSold = Item::where('status', 'sold')->count();
+            $totalItemsAcquired = Item::where('status', 'acquired')->count();
+            
+            $salesByMonth = Transaction::where('status', 'completed')
+                ->selectRaw('DATE_FORMAT(transaction_date, "%Y-%m") as month, COUNT(*) as count')
+                ->groupBy('month')
+                ->orderBy('month', 'desc')
+                ->limit(12)
+                ->get();
+
+            $recentSales = Transaction::with(['item', 'buyer', 'seller'])
+                ->where('status', 'completed')
+                ->orderBy('transaction_date', 'desc')
+                ->limit(10)
+                ->get();
+
+            return response()->json([
+                'message' => 'Sales report retrieved successfully',
+                'data' => [
+                    'total_items_sold' => $totalItemsSold,
+                    'total_items_acquired' => $totalItemsAcquired,
+                    'sales_by_month' => $salesByMonth,
+                    'recent_sales' => $recentSales,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting sales report', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve sales report'], 500);
+        }
+    }
+
+    /**
+     * Get profit report (admin only)
+     * GET /api/admin/reports/profit
+     */
+    public function getProfitReport(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $totalMarkupProfit = Item::where('status', 'sold')->sum('markup_points');
+            
+            $profitByMonth = Transaction::where('status', 'completed')
+                ->join('items', 'transactions.item_id', '=', 'items.item_id')
+                ->selectRaw('DATE_FORMAT(transactions.transaction_date, "%Y-%m") as month, SUM(items.markup_points) as profit')
+                ->groupBy('month')
+                ->orderBy('month', 'desc')
+                ->limit(12)
+                ->get();
+
+            $topProfitableItems = Item::where('status', 'sold')
+                ->where('markup_points', '>', 0)
+                ->orderBy('markup_points', 'desc')
+                ->limit(10)
+                ->with(['seller'])
+                ->get();
+
+            return response()->json([
+                'message' => 'Profit report retrieved successfully',
+                'data' => [
+                    'total_markup_profit' => $totalMarkupProfit,
+                    'profit_by_month' => $profitByMonth,
+                    'top_profitable_items' => $topProfitableItems,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting profit report', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve profit report'], 500);
+        }
+    }
+
+    /**
+     * Get category report (admin only)
+     * GET /api/admin/reports/categories
+     */
+    public function getCategoryReport(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $categorySales = \App\Models\Category::withCount([
+                'items' => function ($query) {
+                    $query->where('status', 'sold');
+                }
+            ])
+            ->with(['items' => function ($query) {
+                $query->where('status', 'sold')->select('category_id', 'markup_points');
+            }])
+            ->get()
+            ->map(function ($category) {
+                $totalMarkup = $category->items->sum('markup_points');
+                return [
+                    'category_id' => $category->category_id,
+                    'category_name' => $category->category_name,
+                    'items_sold' => $category->items_count,
+                    'total_markup_profit' => $totalMarkup,
+                    'average_markup_per_item' => $category->items_count > 0 ? $totalMarkup / $category->items_count : 0,
+                ];
+            })
+            ->sortByDesc('items_sold')
+            ->values();
+
+            $mostSoldCategory = $categorySales->first();
+
+            return response()->json([
+                'message' => 'Category report retrieved successfully',
+                'data' => [
+                    'category_sales' => $categorySales,
+                    'most_sold_category' => $mostSoldCategory,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting category report', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve category report'], 500);
+        }
+    }
+
+    /**
+     * Get user report (admin only)
+     * GET /api/admin/reports/users
+     */
+    public function getUserReport(Request $request)
+    {
+        try {
+            if ($request->user()->role !== 'admin') {
+                return response()->json(['message' => 'Admin access required'], 403);
+            }
+
+            $activeUsers = User::where('role', 'student')->where('is_active', true)->count();
+            $totalStudents = User::where('role', 'student')->count();
+            
+            $topBuyers = User::where('role', 'student')
+                ->withCount(['transactionsAsBuyer' => function ($query) {
+                    $query->where('status', 'completed');
+                }])
+                ->orderBy('transactions_as_buyer_count', 'desc')
+                ->limit(10)
+                ->get(['user_id', 'email', 'wallet_points']);
+
+            $topSellers = User::where('role', 'student')
+                ->withCount(['transactionsAsSeller' => function ($query) {
+                    $query->where('status', 'completed');
+                }])
+                ->orderBy('transactions_as_seller_count', 'desc')
+                ->limit(10)
+                ->get(['user_id', 'email', 'wallet_points']);
+
+            $userActivityByMonth = User::where('role', 'student')
+                ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, COUNT(*) as count')
+                ->groupBy('month')
+                ->orderBy('month', 'desc')
+                ->limit(12)
+                ->get();
+
+            return response()->json([
+                'message' => 'User report retrieved successfully',
+                'data' => [
+                    'active_users' => $activeUsers,
+                    'total_students' => $totalStudents,
+                    'top_buyers' => $topBuyers,
+                    'top_sellers' => $topSellers,
+                    'user_activity_by_month' => $userActivityByMonth,
+                ],
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error getting user report', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to retrieve user report'], 500);
         }
     }
 }
