@@ -306,15 +306,36 @@ class TransactionController extends Controller
             ]);
 
             $recipient = User::where('user_id', $validated['user_id'])->first();
+            $admin = $request->user();
+
+            // Check if admin has sufficient points
+            if ($admin->wallet_points < $validated['points']) {
+                return response()->json([
+                    'message' => 'Insufficient points',
+                    'required' => $validated['points'],
+                    'available' => $admin->wallet_points,
+                ], 400);
+            }
+
+            // Deduct points from admin's wallet
+            $admin->decrement('wallet_points', $validated['points']);
 
             // Add points to user's wallet
             $recipient->increment('wallet_points', $validated['points']);
 
-            // Create point record
+            // Create point record for recipient
             \App\Models\Point::create([
                 'user_id' => $validated['user_id'],
                 'points_change' => $validated['points'],
                 'reason' => $validated['reason'],
+                'related_item_id' => null,
+            ]);
+
+            // Create point record for admin (negative balance)
+            \App\Models\Point::create([
+                'user_id' => $admin->user_id,
+                'points_change' => -$validated['points'],
+                'reason' => 'purchase', // Admin is "purchasing" from student
                 'related_item_id' => null,
             ]);
 
@@ -324,7 +345,8 @@ class TransactionController extends Controller
                     'recipient_id' => $validated['user_id'],
                     'recipient_email' => $recipient->email,
                     'points_sent' => $validated['points'],
-                    'new_balance' => $recipient->wallet_points,
+                    'recipient_new_balance' => $recipient->wallet_points,
+                    'admin_new_balance' => $admin->wallet_points,
                     'reason' => $validated['reason'],
                     'sent_by' => $request->user()->user_id,
                 ]
