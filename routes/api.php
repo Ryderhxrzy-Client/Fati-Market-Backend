@@ -85,17 +85,30 @@ Route::middleware('auth:sanctum')->group(function () {
     // Points routes
     Route::prefix('points')->group(function () {
         Route::get('/history', [TransactionController::class, 'getPointHistory']);
+        Route::get('/given', [TransactionController::class, 'getPointsGiven']);
+        Route::get('/received', [TransactionController::class, 'getPointsReceived']);
     });
 
     // Admin transaction management routes
     Route::prefix('admin/transactions')->group(function () {
         Route::get('/', [TransactionController::class, 'getAllTransactions']);
         Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
+        Route::get('/cash', [TransactionController::class, 'getCashTransactions']);
+        Route::get('/trade', [TransactionController::class, 'getTradeTransactions']);
+        Route::get('/profit-summary', [TransactionController::class, 'getProfitSummary']);
     });
 
     // Admin management routes
     Route::prefix('admin')->group(function () {
         Route::post('/send-points', [TransactionController::class, 'sendPoints']);
         Route::get('/item/{item_id}/points-status', [TransactionController::class, 'checkItemPointsStatus']);
+    });
+
+    // Admin Reports/Analytics routes
+    Route::prefix('admin/reports')->group(function () {
+        Route::get('/sales', [TransactionController::class, 'getSalesReport']);
+        Route::get('/profit', [TransactionController::class, 'getProfitReport']);
+        Route::get('/categories', [TransactionController::class, 'getCategoryReport']);
+        Route::get('/users', [TransactionController::class, 'getUserReport']);
     });
 });
