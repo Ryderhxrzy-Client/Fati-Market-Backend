@@ -303,6 +303,7 @@ class TransactionController extends Controller
                 'user_id' => ['required', 'integer', 'exists:users,user_id'],
                 'points' => ['required', 'integer', 'min:1'],
                 'reason' => ['required', 'in:purchase,sale,markup,bonus,adjustment'],
+                'related_item_id' => ['nullable', 'integer', 'exists:items,item_id'],
             ]);
 
             $recipient = User::where('user_id', $validated['user_id'])->first();
@@ -328,15 +329,24 @@ class TransactionController extends Controller
                 'user_id' => $validated['user_id'],
                 'points_change' => $validated['points'],
                 'reason' => $validated['reason'],
-                'related_item_id' => null,
+                'related_item_id' => $validated['related_item_id'] ?? null,
             ]);
 
-            // Create point record for admin (negative balance)
+            // Create point record for admin (opposite transaction)
+            $adminReason = match($validated['reason']) {
+                'sale' => 'purchase',        // Admin purchases what student sells
+                'purchase' => 'sale',        // Admin sells what student purchases
+                'markup' => 'sale',          // Admin's markup comes from sale
+                'bonus' => 'adjustment',     // Admin's bonus is an adjustment
+                'adjustment' => 'adjustment', // Adjustments are adjustments
+                default => 'adjustment'
+            };
+
             \App\Models\Point::create([
                 'user_id' => $admin->user_id,
                 'points_change' => -$validated['points'],
-                'reason' => 'purchase', // Admin is "purchasing" from student
-                'related_item_id' => null,
+                'reason' => $adminReason,
+                'related_item_id' => $validated['related_item_id'] ?? null,
             ]);
 
             return response()->json([
@@ -348,6 +358,8 @@ class TransactionController extends Controller
                     'recipient_new_balance' => $recipient->wallet_points,
                     'admin_new_balance' => $admin->wallet_points,
                     'reason' => $validated['reason'],
+                    'admin_reason' => $adminReason,
+                    'related_item_id' => $validated['related_item_id'] ?? null,
                     'sent_by' => $request->user()->user_id,
                 ]
             ], 200);
