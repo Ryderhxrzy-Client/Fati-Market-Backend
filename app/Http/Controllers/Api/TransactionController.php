@@ -302,7 +302,7 @@ class TransactionController extends Controller
             $validated = $request->validate([
                 'user_id' => ['required', 'integer', 'exists:users,user_id'],
                 'points' => ['required', 'integer', 'min:1'],
-                'reason' => ['required', 'in:bonus,adjustment'],
+                'reason' => ['required', 'in:purchase,sale,markup,bonus,adjustment'],
             ]);
 
             $recipient = User::where('user_id', $validated['user_id'])->first();
