@@ -14,6 +14,9 @@ class Point extends Model
     protected $keyType = 'int';
     protected $table = 'points';
 
+    // Disable timestamps since table only has created_at
+    public $timestamps = false;
+
     protected $fillable = [
         'user_id',
         'points_change',
