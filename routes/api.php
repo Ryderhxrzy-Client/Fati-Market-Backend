@@ -102,6 +102,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('admin')->group(function () {
         Route::post('/send-points', [TransactionController::class, 'sendPoints']);
         Route::get('/item/{item_id}/points-status', [TransactionController::class, 'checkItemPointsStatus']);
+        Route::post('/mark-as-sold', [TransactionController::class, 'markAsSold']);
+        Route::post('/mark-as-reserved', [TransactionController::class, 'markAsReserved']);
     });
 
     // Admin Reports/Analytics routes
