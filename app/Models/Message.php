@@ -22,6 +22,7 @@ class Message extends Model
         'receiver_id',
         'message',
         'sent_at',
+        'is_read',
     ];
 
     protected $dates = [
