@@ -55,6 +55,8 @@ class MessagesController extends Controller
                 'data' => [
                     'message_id' => $newMessage->message_id,
                     'item_id' => $newMessage->item_id,
+                    'item_title' => $newMessage->item?->title,
+                    'item_status' => $newMessage->item?->status,
                     'sender_id' => $newMessage->sender_id,
                     'receiver_id' => $newMessage->receiver_id,
                     'message' => $newMessage->message,
@@ -101,7 +103,7 @@ class MessagesController extends Controller
                     $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
                 },
                 'item' => function ($query) {
-                    $query->select('item_id', 'title');
+                    $query->select('item_id', 'title', 'status');
                 }
             ])
                 ->where('item_id', $itemId)
@@ -116,6 +118,7 @@ class MessagesController extends Controller
                         'message_id' => $msg->message_id,
                         'item_id' => $msg->item_id,
                         'item_title' => $msg->item?->title,
+                        'item_status' => $msg->item?->status,
                         'sender_id' => $msg->sender_id,
                         'sender_email' => $msg->sender->email,
                         'sender_name' => $msg->sender->studentInfo?->first_name . ' ' . $msg->sender->studentInfo?->last_name,
@@ -170,7 +173,7 @@ class MessagesController extends Controller
                         $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
                     },
                     'item' => function ($query) {
-                        $query->select('item_id', 'title');
+                        $query->select('item_id', 'title', 'status');
                     }
                 ])
                 ->orderBy('sent_at', 'desc')
@@ -197,6 +200,7 @@ class MessagesController extends Controller
                         'profile_picture' => $otherUser->studentInfo?->profile_picture,
                         'item_id' => $latestMessage->item_id,
                         'item_title' => $latestMessage->item?->title,
+                        'item_status' => $latestMessage->item?->status,
                         'latest_message' => $latestMessage->message,
                         'last_message_at' => $latestMessage->sent_at,
                         'message_count' => $messages->count(),
@@ -244,6 +248,9 @@ class MessagesController extends Controller
                     },
                     'receiver' => function ($query) {
                         $query->select('user_id', 'email');
+                    },
+                    'item' => function ($query) {
+                        $query->select('item_id', 'title', 'status');
                     }
                 ])
                 ->orderBy('sent_at', 'asc')
@@ -255,6 +262,9 @@ class MessagesController extends Controller
                         'sender_email' => $msg->sender->email,
                         'receiver_id' => $msg->receiver_id,
                         'receiver_email' => $msg->receiver->email,
+                        'item_id' => $msg->item_id,
+                        'item_title' => $msg->item?->title,
+                        'item_status' => $msg->item?->status,
                         'message' => $msg->message,
                         'sent_at' => $msg->sent_at,
                     ];
