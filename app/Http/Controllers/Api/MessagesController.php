@@ -86,7 +86,7 @@ class MessagesController extends Controller
             // Mark all unread messages as read for current user (receiver)
             $updateQuery = Message::where('item_id', $itemId)
                 ->where('receiver_id', $userId)
-                ->where('is_read', false);
+                ->where('is_read', 0);
                 
             if ($otherUserId) {
                 $updateQuery->where('sender_id', $otherUserId);
@@ -206,7 +206,7 @@ class MessagesController extends Controller
 
                     // Count unread messages for this conversation
                     $unreadCount = $messages->filter(function ($msg) use ($userId) {
-                        return $msg->receiver_id === $userId && $msg->is_read === false;
+                        return $msg->receiver_id === $userId && !$msg->is_read;
                     })->count();
 
                     return [
