@@ -521,11 +521,13 @@ class TransactionController extends Controller
             $validated = $request->validate([
                 'item_id' => ['required', 'integer', 'exists:items,item_id'],
                 'buyer_id' => ['required', 'integer', 'exists:users,user_id'],
+                'payment_method' => ['required', 'string', 'in:points,cash,trade'],
             ]);
 
             $admin = $request->user();
             $buyer = User::where('user_id', $validated['buyer_id'])->first();
             $item = Item::where('item_id', $validated['item_id'])->first();
+            $paymentMethod = $validated['payment_method'];
 
             if (!$item) {
                 return response()->json(['message' => 'Item not found'], 404);
@@ -558,29 +560,32 @@ class TransactionController extends Controller
                 ], 400);
             }
 
-            // Calculate points needed
-            $pointsNeeded = $item->markup_points ?? $item->price_points;
+            // Calculate points needed based on payment method
+            $pointsNeeded = 0;
+            if ($paymentMethod === 'points') {
+                $pointsNeeded = $item->markup_points ?? $item->price_points;
 
-            // Check if buyer has enough points
-            if ($buyer->wallet_points < $pointsNeeded) {
-                // Insert error message into the chat
-                \App\Models\Message::create([
-                    'item_id' => $item->item_id,
-                    'sender_id' => $admin->user_id,
-                    'receiver_id' => $buyer->user_id,
-                    'message' => 'Transaction failed: You do not have enough points. ' . $pointsNeeded . ' points required.',
-                    'sent_at' => now(),
-                ]);
+                // Check if buyer has enough points
+                if ($buyer->wallet_points < $pointsNeeded) {
+                    // Insert error message into the chat
+                    \App\Models\Message::create([
+                        'item_id' => $item->item_id,
+                        'sender_id' => $admin->user_id,
+                        'receiver_id' => $buyer->user_id,
+                        'message' => 'Transaction failed: You do not have enough points. ' . $pointsNeeded . ' points required.',
+                        'sent_at' => now(),
+                    ]);
 
-                return response()->json([
-                    'message' => 'Insufficient points',
-                    'required' => $pointsNeeded,
-                    'available' => $buyer->wallet_points,
-                ], 400);
+                    return response()->json([
+                        'message' => 'Insufficient points',
+                        'required' => $pointsNeeded,
+                        'available' => $buyer->wallet_points,
+                    ], 400);
+                }
             }
 
             // Begin database transaction
-            $result = DB::transaction(function () use ($item, $buyer, $admin, $pointsNeeded, $reservation) {
+            $result = DB::transaction(function () use ($item, $buyer, $admin, $pointsNeeded, $reservation, $paymentMethod) {
                 $seller = User::where('user_id', $item->seller_id)->first();
 
                 // Create transaction record
@@ -588,32 +593,34 @@ class TransactionController extends Controller
                     'item_id' => $item->item_id,
                     'buyer_id' => $buyer->user_id,
                     'seller_id' => $seller ? $seller->user_id : $admin->user_id,
-                    'payment_method' => 'points',
-                    'points_used' => $pointsNeeded,
+                    'payment_method' => $paymentMethod,
+                    'points_used' => $pointsNeeded, // 0 if cash/trade
                     'status' => 'completed',
                 ]);
 
-                // Transfer points (deduct from buyer, add to seller)
-                $buyer->decrement('wallet_points', $pointsNeeded);
-                if ($seller) {
-                    $seller->increment('wallet_points', $pointsNeeded);
-                }
+                // Transfer points (deduct from buyer, add to seller) only if using points
+                if ($paymentMethod === 'points') {
+                    $buyer->decrement('wallet_points', $pointsNeeded);
+                    if ($seller) {
+                        $seller->increment('wallet_points', $pointsNeeded);
+                    }
 
-                // Add point records
-                \App\Models\Point::create([
-                    'user_id' => $buyer->user_id,
-                    'points_change' => -$pointsNeeded,
-                    'reason' => 'purchase',
-                    'related_item_id' => $item->item_id,
-                ]);
-
-                if ($seller) {
+                    // Add point records
                     \App\Models\Point::create([
-                        'user_id' => $seller->user_id,
-                        'points_change' => $pointsNeeded,
-                        'reason' => 'sale',
+                        'user_id' => $buyer->user_id,
+                        'points_change' => -$pointsNeeded,
+                        'reason' => 'purchase',
                         'related_item_id' => $item->item_id,
                     ]);
+
+                    if ($seller) {
+                        \App\Models\Point::create([
+                            'user_id' => $seller->user_id,
+                            'points_change' => $pointsNeeded,
+                            'reason' => 'sale',
+                            'related_item_id' => $item->item_id,
+                        ]);
+                    }
                 }
 
                 // Update item status to sold
@@ -624,12 +631,22 @@ class TransactionController extends Controller
                     $reservation->update(['status' => 'completed']);
                 }
 
+                // Prepare success message based on payment method
+                $successChatMsg = 'Congratulations! You have successfully bought this item.';
+                if ($paymentMethod === 'points') {
+                    $successChatMsg = 'Congratulations! You have successfully bought this item for ' . $pointsNeeded . ' points.';
+                } elseif ($paymentMethod === 'cash') {
+                    $successChatMsg = 'Congratulations! You have successfully bought this item using cash.';
+                } elseif ($paymentMethod === 'trade') {
+                    $successChatMsg = 'Congratulations! You have successfully traded for this item.';
+                }
+
                 // Insert success message to user in chat
                 \App\Models\Message::create([
                     'item_id' => $item->item_id,
                     'sender_id' => $admin->user_id,
                     'receiver_id' => $buyer->user_id,
-                    'message' => 'Congratulations! You have successfully bought this item for ' . $pointsNeeded . ' points.',
+                    'message' => $successChatMsg,
                     'sent_at' => now(),
                 ]);
 
@@ -642,6 +659,7 @@ class TransactionController extends Controller
                     'transaction_id' => $result->transaction_id,
                     'item_id' => $result->item_id,
                     'buyer_id' => $result->buyer_id,
+                    'payment_method' => $result->payment_method,
                     'points_used' => $result->points_used,
                     'status' => $result->status,
                 ]
