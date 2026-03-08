@@ -431,20 +431,51 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'Item not found'], 404);
             }
 
-            // Check if item is already reserved by someone else, or sold
+            // Check if item is already reserved or sold
             if ($item->status !== 'public') {
                 
-                // If the item is already reserved by this exact buyer, handle gracefully
                 $existingReservation = \App\Models\Reservation::where('item_id', $item->item_id)
                     ->where('status', 'active')
                     ->first();
                 
-                if ($existingReservation && $existingReservation->user_id === $buyer->user_id) {
-                     return response()->json([
-                        'message' => 'This item is already reserved for other user.',
+                // If there is an active reservation
+                if ($existingReservation) {
+                    if ($existingReservation->user_id == $buyer->user_id) {
+                        return response()->json([
+                            'message' => 'This item is already reserved by this user.',
+                        ], 400);
+                    } else {
+                        // Reserved by someone else
+                        \App\Models\Message::create([
+                            'item_id' => $item->item_id,
+                            'sender_id' => $admin->user_id,
+                            'receiver_id' => $buyer->user_id,
+                            'message' => 'Reservation failed: This item is already reserved by another user.',
+                            'sent_at' => now(),
+                        ]);
+
+                        return response()->json([
+                            'message' => 'This item is already reserved by another user.',
+                        ], 400);
+                    }
+                }
+
+                // Fallback for older items that have 'reserved' status but no reservation row in the new table
+                if ($item->status === 'reserved') {
+                    \App\Models\Message::create([
+                        'item_id' => $item->item_id,
+                        'sender_id' => $admin->user_id,
+                        'receiver_id' => $buyer->user_id,
+                        'message' => 'Reservation failed: This item is already reserved by another user.',
+                        'sent_at' => now(),
+                    ]);
+
+                    return response()->json([
+                        'message' => 'This item is already reserved by another user.',
                     ], 400);
                 }
 
+                // If no active reservation exists AND it is completely sold or unavailable
                 \App\Models\Message::create([
                     'item_id' => $item->item_id,
                     'sender_id' => $admin->user_id,
