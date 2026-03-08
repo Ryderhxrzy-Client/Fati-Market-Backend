@@ -405,6 +405,258 @@ class TransactionController extends Controller
     }
 
     /**
+     * Mark an item as reserved from the chat message admin page
+     * POST /api/admin/mark-as-reserved
+     */
+    public function markAsReserved(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'item_id' => ['required', 'integer', 'exists:items,item_id'],
+                'buyer_id' => ['required', 'integer', 'exists:users,user_id'],
+            ]);
+
+            $admin = $request->user();
+            $buyer = User::where('user_id', $validated['buyer_id'])->first();
+            $item = Item::where('item_id', $validated['item_id'])->first();
+
+            if (!$item) {
+                return response()->json(['message' => 'Item not found'], 404);
+            }
+
+            // Check if item is already reserved by someone else, or sold
+            if ($item->status !== 'public') {
+                
+                // If the item is already reserved by this exact buyer, handle gracefully
+                $existingReservation = \App\Models\Reservation::where('item_id', $item->item_id)
+                    ->where('status', 'active')
+                    ->first();
+                
+                if ($existingReservation && $existingReservation->user_id === $buyer->user_id) {
+                     return response()->json([
+                        'message' => 'This item is already reserved for other user.',
+                    ], 400);
+                }
+
+                \App\Models\Message::create([
+                    'item_id' => $item->item_id,
+                    'sender_id' => $admin->user_id,
+                    'receiver_id' => $buyer->user_id,
+                    'message' => 'Reservation failed: This item is no longer available.',
+                    'sent_at' => now(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Item is not available for reservation',
+                ], 400);
+            }
+
+            // Begin database transaction
+            $result = DB::transaction(function () use ($item, $buyer, $admin) {
+                
+                // Create the reservation
+                $reservation = \App\Models\Reservation::create([
+                    'item_id' => $item->item_id,
+                    'user_id' => $buyer->user_id,
+                    'status' => 'active',
+                    // Optional: Expires in 24 hours
+                    'expires_at' => now()->addHours(24),
+                ]);
+
+                // Update item status to reserved
+                $item->update(['status' => 'reserved']);
+
+                // Insert success message to user in chat
+                \App\Models\Message::create([
+                    'item_id' => $item->item_id,
+                    'sender_id' => $admin->user_id,
+                    'receiver_id' => $buyer->user_id,
+                    'message' => 'Congratulations! You have successfully reserved this item.',
+                    'sent_at' => now(),
+                ]);
+
+                return $reservation;
+            });
+
+            return response()->json([
+                'message' => 'Item reserved successfully',
+                'data' => [
+                    'reservation_id' => $result->reservation_id,
+                    'item_id' => $result->item_id,
+                    'user_id' => $result->user_id,
+                    'status' => $result->status,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error marking as reserved', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to mark as reserved',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Mark an item as sold from the chat message admin page
+     * POST /api/admin/mark-as-sold
+     */
+    public function markAsSold(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Admin access required',
+                ], 403);
+            }
+
+            $validated = $request->validate([
+                'item_id' => ['required', 'integer', 'exists:items,item_id'],
+                'buyer_id' => ['required', 'integer', 'exists:users,user_id'],
+            ]);
+
+            $admin = $request->user();
+            $buyer = User::where('user_id', $validated['buyer_id'])->first();
+            $item = Item::where('item_id', $validated['item_id'])->first();
+
+            if (!$item) {
+                return response()->json(['message' => 'Item not found'], 404);
+            }
+
+            // Verify if there is an active reservation
+            $reservation = \App\Models\Reservation::where('item_id', $item->item_id)
+                ->where('status', 'active')
+                ->first();
+
+            // If it is reserved, validate that the user buying it is the owner
+            if ($reservation && $reservation->user_id !== $buyer->user_id) {
+                \App\Models\Message::create([
+                    'item_id' => $item->item_id,
+                    'sender_id' => $admin->user_id,
+                    'receiver_id' => $buyer->user_id,
+                    'message' => 'Purchase failed: This item is reserved by another user.',
+                    'sent_at' => now(),
+                ]);
+
+                return response()->json([
+                    'message' => 'This item is reserved by another user and cannot be bought.'
+                ], 403);
+            }
+
+            // Check if item is available for purchase (public OR reserved)
+            if (!in_array($item->status, ['public', 'reserved'])) {
+                return response()->json([
+                    'message' => 'Item is not available for purchase',
+                ], 400);
+            }
+
+            // Calculate points needed
+            $pointsNeeded = $item->markup_points ?? $item->price_points;
+
+            // Check if buyer has enough points
+            if ($buyer->wallet_points < $pointsNeeded) {
+                // Insert error message into the chat
+                \App\Models\Message::create([
+                    'item_id' => $item->item_id,
+                    'sender_id' => $admin->user_id,
+                    'receiver_id' => $buyer->user_id,
+                    'message' => 'Transaction failed: You do not have enough points. ' . $pointsNeeded . ' points required.',
+                    'sent_at' => now(),
+                ]);
+
+                return response()->json([
+                    'message' => 'Insufficient points',
+                    'required' => $pointsNeeded,
+                    'available' => $buyer->wallet_points,
+                ], 400);
+            }
+
+            // Begin database transaction
+            $result = DB::transaction(function () use ($item, $buyer, $admin, $pointsNeeded, $reservation) {
+                $seller = User::where('user_id', $item->seller_id)->first();
+
+                // Create transaction record
+                $transaction = Transaction::create([
+                    'item_id' => $item->item_id,
+                    'buyer_id' => $buyer->user_id,
+                    'seller_id' => $seller ? $seller->user_id : $admin->user_id,
+                    'payment_method' => 'points',
+                    'points_used' => $pointsNeeded,
+                    'status' => 'completed',
+                ]);
+
+                // Transfer points (deduct from buyer, add to seller)
+                $buyer->decrement('wallet_points', $pointsNeeded);
+                if ($seller) {
+                    $seller->increment('wallet_points', $pointsNeeded);
+                }
+
+                // Add point records
+                \App\Models\Point::create([
+                    'user_id' => $buyer->user_id,
+                    'points_change' => -$pointsNeeded,
+                    'reason' => 'purchase',
+                    'related_item_id' => $item->item_id,
+                ]);
+
+                if ($seller) {
+                    \App\Models\Point::create([
+                        'user_id' => $seller->user_id,
+                        'points_change' => $pointsNeeded,
+                        'reason' => 'sale',
+                        'related_item_id' => $item->item_id,
+                    ]);
+                }
+
+                // Update item status to sold
+                $item->update(['status' => 'sold']);
+
+                // If a reservation existed, mark it as completed
+                if ($reservation) {
+                    $reservation->update(['status' => 'completed']);
+                }
+
+                // Insert success message to user in chat
+                \App\Models\Message::create([
+                    'item_id' => $item->item_id,
+                    'sender_id' => $admin->user_id,
+                    'receiver_id' => $buyer->user_id,
+                    'message' => 'Congratulations! You have successfully bought this item for ' . $pointsNeeded . ' points.',
+                    'sent_at' => now(),
+                ]);
+
+                return $transaction;
+            });
+
+            return response()->json([
+                'message' => 'Item marked as sold successfully',
+                'data' => [
+                    'transaction_id' => $result->transaction_id,
+                    'item_id' => $result->item_id,
+                    'buyer_id' => $result->buyer_id,
+                    'points_used' => $result->points_used,
+                    'status' => $result->status,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error marking as sold', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to mark as sold',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Get user's point history
      * GET /api/points/history
      */
