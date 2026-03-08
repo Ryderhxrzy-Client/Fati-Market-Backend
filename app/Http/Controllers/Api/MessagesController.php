@@ -81,15 +81,21 @@ class MessagesController extends Controller
     {
         try {
             $userId = $request->user()->user_id;
+            $otherUserId = $request->query('other_user_id');
 
             // Mark all unread messages as read for current user (receiver)
-            Message::where('item_id', $itemId)
+            $updateQuery = Message::where('item_id', $itemId)
                 ->where('receiver_id', $userId)
-                ->where('is_read', false)
-                ->update(['is_read' => true]);
+                ->where('is_read', false);
+                
+            if ($otherUserId) {
+                $updateQuery->where('sender_id', $otherUserId);
+            }
+            
+            $updateQuery->update(['is_read' => true]);
 
             // Get messages for this item where current user is sender or receiver
-            $messages = Message::with([
+            $messageQuery = Message::with([
                 'sender' => function ($query) {
                     $query->select('user_id', 'email');
                 },
@@ -105,13 +111,24 @@ class MessagesController extends Controller
                 'item' => function ($query) {
                     $query->select('item_id', 'title', 'status');
                 }
-            ])
-                ->where('item_id', $itemId)
-                ->where(function ($query) use ($userId) {
+            ])->where('item_id', $itemId);
+
+            if ($otherUserId) {
+                $messageQuery->where(function ($query) use ($userId, $otherUserId) {
+                    $query->where(function ($q) use ($userId, $otherUserId) {
+                        $q->where('sender_id', $userId)->where('receiver_id', $otherUserId);
+                    })->orWhere(function ($q) use ($userId, $otherUserId) {
+                        $q->where('sender_id', $otherUserId)->where('receiver_id', $userId);
+                    });
+                });
+            } else {
+                $messageQuery->where(function ($query) use ($userId) {
                     $query->where('sender_id', $userId)
                         ->orWhere('receiver_id', $userId);
-                })
-                ->orderBy('sent_at', 'asc')
+                });
+            }
+
+            $messages = $messageQuery->orderBy('sent_at', 'asc')
                 ->get()
                 ->map(function ($msg) {
                     return [
