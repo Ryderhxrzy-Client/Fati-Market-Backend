@@ -200,7 +200,7 @@ class MessagesController extends Controller
                     $otherUserId = $message->sender_id === $userId ? $message->receiver_id : $message->sender_id;
                     return $otherUserId . '_' . $message->item_id;
                 })
-                ->map(function ($messages, $otherUserId) use ($userId) {
+                ->map(function ($messages, $groupKey) use ($userId) {
                     $latestMessage = $messages->first();
                     $otherUser = $latestMessage->sender_id === $userId ? $latestMessage->receiver : $latestMessage->sender;
 
@@ -210,7 +210,7 @@ class MessagesController extends Controller
                     })->count();
 
                     return [
-                        'other_user_id' => $otherUserId,
+                        'other_user_id' => $otherUser->user_id,
                         'other_user_email' => $otherUser->email,
                         'first_name' => $otherUser->studentInfo?->first_name,
                         'last_name' => $otherUser->studentInfo?->last_name,
