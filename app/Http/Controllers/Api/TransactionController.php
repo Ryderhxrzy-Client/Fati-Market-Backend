@@ -441,6 +441,15 @@ class TransactionController extends Controller
                 // If there is an active reservation
                 if ($existingReservation) {
                     if ($existingReservation->user_id == $buyer->user_id) {
+                        // Insert chat message even if it's the exact same user
+                        \App\Models\Message::create([
+                            'item_id' => $item->item_id,
+                            'sender_id' => $admin->user_id,
+                            'receiver_id' => $buyer->user_id,
+                            'message' => 'This item is already reserved by this user.',
+                            'sent_at' => now(),
+                        ]);
+
                         return response()->json([
                             'message' => 'This item is already reserved by this user.',
                         ], 400);
@@ -466,12 +475,12 @@ class TransactionController extends Controller
                         'item_id' => $item->item_id,
                         'sender_id' => $admin->user_id,
                         'receiver_id' => $buyer->user_id,
-                        'message' => 'Reservation failed: This item is already reserved by another user.',
+                        'message' => 'Reservation failed: This item is already reserved.',
                         'sent_at' => now(),
                     ]);
 
                     return response()->json([
-                        'message' => 'This item is already reserved by another user.',
+                        'message' => 'This item is already reserved.',
                     ], 400);
                 }
 
