@@ -110,6 +110,9 @@ class MessagesController extends Controller
                 },
                 'item' => function ($query) {
                     $query->select('item_id', 'title', 'status');
+                },
+                'item.photos' => function ($query) {
+                    $query->select('item_id', 'photo_url');
                 }
             ])->where('item_id', $itemId);
 
@@ -136,6 +139,7 @@ class MessagesController extends Controller
                         'item_id' => $msg->item_id,
                         'item_title' => $msg->item?->title,
                         'item_status' => $msg->item?->status,
+                        'item_photo' => $msg->item?->photos->first()?->photo_url,
                         'sender_id' => $msg->sender_id,
                         'sender_email' => $msg->sender->email,
                         'sender_name' => $msg->sender->studentInfo?->first_name . ' ' . $msg->sender->studentInfo?->last_name,
@@ -191,6 +195,9 @@ class MessagesController extends Controller
                     },
                     'item' => function ($query) {
                         $query->select('item_id', 'title', 'status');
+                    },
+                    'item.photos' => function ($query) {
+                        $query->select('item_id', 'photo_url');
                     }
                 ])
                 ->orderBy('sent_at', 'desc')
@@ -218,6 +225,7 @@ class MessagesController extends Controller
                         'item_id' => $latestMessage->item_id,
                         'item_title' => $latestMessage->item?->title,
                         'item_status' => $latestMessage->item?->status,
+                        'item_photo' => $latestMessage->item?->photos->first()?->photo_url,
                         'latest_message' => $latestMessage->message,
                         'last_message_at' => $latestMessage->sent_at,
                         'message_count' => $messages->count(),
@@ -268,6 +276,9 @@ class MessagesController extends Controller
                     },
                     'item' => function ($query) {
                         $query->select('item_id', 'title', 'status');
+                    },
+                    'item.photos' => function ($query) {
+                        $query->select('item_id', 'photo_url');
                     }
                 ])
                 ->orderBy('sent_at', 'asc')
@@ -282,6 +293,7 @@ class MessagesController extends Controller
                         'item_id' => $msg->item_id,
                         'item_title' => $msg->item?->title,
                         'item_status' => $msg->item?->status,
+                        'item_photo' => $msg->item?->photos->first()?->photo_url,
                         'message' => $msg->message,
                         'sent_at' => $msg->sent_at,
                     ];
