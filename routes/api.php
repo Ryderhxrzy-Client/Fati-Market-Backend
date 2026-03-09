@@ -25,6 +25,9 @@ Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 
 // Protected routes (require authentication)
 Route::middleware('auth:sanctum')->group(function () {
+    // Auth routes
+    Route::post('/logout', [AuthController::class, 'logout']);
+
     // Profile routes
     Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
     Route::get('/wallet', [AuthController::class, 'getWalletBalance']);
