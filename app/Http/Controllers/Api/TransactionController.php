@@ -522,6 +522,25 @@ class TransactionController extends Controller
                     'sent_at' => now(),
                 ]);
 
+                // Notify other users who inquired about the item
+                $otherUserIds = \App\Models\Message::where('item_id', $item->item_id)
+                    ->pluck('sender_id')
+                    ->merge(\App\Models\Message::where('item_id', $item->item_id)->pluck('receiver_id'))
+                    ->unique()
+                    ->reject(function ($id) use ($admin, $buyer, $item) {
+                        return collect([$admin->user_id, $buyer->user_id, $item->seller_id])->contains($id);
+                    });
+
+                foreach ($otherUserIds as $otherUserId) {
+                    \App\Models\Message::create([
+                        'item_id' => $item->item_id,
+                        'sender_id' => $admin->user_id,
+                        'receiver_id' => $otherUserId,
+                        'message' => 'This item is already reserved by another user.',
+                        'sent_at' => now(),
+                    ]);
+                }
+
                 return $reservation;
             });
 
@@ -689,6 +708,25 @@ class TransactionController extends Controller
                     'message' => $successChatMsg,
                     'sent_at' => now(),
                 ]);
+
+                // Notify other users who inquired about the item
+                $otherUserIds = \App\Models\Message::where('item_id', $item->item_id)
+                    ->pluck('sender_id')
+                    ->merge(\App\Models\Message::where('item_id', $item->item_id)->pluck('receiver_id'))
+                    ->unique()
+                    ->reject(function ($id) use ($admin, $buyer, $item) {
+                        return collect([$admin->user_id, $buyer->user_id, $item->seller_id])->contains($id);
+                    });
+
+                foreach ($otherUserIds as $otherUserId) {
+                    \App\Models\Message::create([
+                        'item_id' => $item->item_id,
+                        'sender_id' => $admin->user_id,
+                        'receiver_id' => $otherUserId,
+                        'message' => 'This item is already sold to another user.',
+                        'sent_at' => now(),
+                    ]);
+                }
 
                 return $transaction;
             });
