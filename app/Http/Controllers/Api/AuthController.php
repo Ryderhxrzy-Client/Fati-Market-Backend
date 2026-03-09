@@ -224,6 +224,34 @@ class AuthController extends Controller
     }
 
     /**
+     * Logout user and invalidate token
+     * POST /api/logout
+     */
+    public function logout(Request $request)
+    {
+        try {
+            // Get the currently authenticated user
+            $user = $request->user();
+
+            // Mark user as inactive
+            $user->update(['is_active' => false]);
+
+            // Revoke the token that was used to authenticate the current request
+            $user->currentAccessToken()->delete();
+
+            return response()->json([
+                'message' => 'Logged out successfully',
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Logout failed',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
      * Update profile picture
      * PUT /api/profile/picture
      */
