@@ -1148,21 +1148,23 @@ class TransactionController extends Controller
             $activeUsers = User::where('role', 'student')->where('is_active', true)->count();
             $totalStudents = User::where('role', 'student')->count();
             
-            $topBuyers = User::where('role', 'student')
+            $topBuyers = User::select('user_id', 'email', 'wallet_points')
+                ->where('role', 'student')
                 ->withCount(['transactionsAsBuyer' => function ($query) {
                     $query->where('status', 'completed');
                 }])
                 ->orderBy('transactions_as_buyer_count', 'desc')
                 ->limit(10)
-                ->get(['user_id', 'email', 'wallet_points']);
+                ->get();
 
-            $topSellers = User::where('role', 'student')
+            $topSellers = User::select('user_id', 'email', 'wallet_points')
+                ->where('role', 'student')
                 ->withCount(['transactionsAsSeller' => function ($query) {
                     $query->where('status', 'completed');
                 }])
                 ->orderBy('transactions_as_seller_count', 'desc')
                 ->limit(10)
-                ->get(['user_id', 'email', 'wallet_points']);
+                ->get();
 
             $userActivityByMonth = User::where('role', 'student')
                 ->selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, COUNT(*) as count')
