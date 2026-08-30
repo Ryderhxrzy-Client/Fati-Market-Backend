@@ -7,6 +7,7 @@ use App\Http\Controllers\Api\ItemsController;
 use App\Http\Controllers\Api\CategoriesController;
 use App\Http\Controllers\Api\FavoritesController;
 use App\Http\Controllers\Api\TransactionController;
+use App\Http\Controllers\Api\FcmDeviceTokenController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
@@ -27,6 +28,8 @@ Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 Route::middleware('auth:sanctum')->group(function () {
     // Auth routes
     Route::post('/logout', [AuthController::class, 'logout']);
+    Route::post('/device-tokens', [FcmDeviceTokenController::class, 'store']);
+    Route::delete('/device-tokens', [FcmDeviceTokenController::class, 'destroy']);
 
     // Profile routes
     Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
@@ -56,6 +59,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{item_id}', [MessagesController::class, 'sendMessage']);
         Route::get('/{item_id}', [MessagesController::class, 'getMessagesByItem']);
         Route::delete('/{message_id}', [MessagesController::class, 'deleteMessage']);
+        Route::post('/{message_id}/read', [MessagesController::class, 'markRead']);
     });
 
     // Conversations routes
