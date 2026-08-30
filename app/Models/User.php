@@ -50,7 +50,38 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'wallet_points' => 'integer',
+            'is_active' => 'boolean',
         ];
+    }
+
+    public const ROLE_ADMIN = 'admin';
+    public const ROLE_STUDENT = 'student';
+
+    /**
+     * Only admins may price, verify turnover, publish, verify payments and
+     * complete or cancel transactions.
+     */
+    public function isAdmin(): bool
+    {
+        return $this->role === self::ROLE_ADMIN;
+    }
+
+    /**
+     * The buyer's redeemable loyalty balance.
+     *
+     * Read this rather than the raw attribute so the intent is explicit at the
+     * call sites that gate redemption.
+     */
+    public function availablePoints(): int
+    {
+        return (int) ($this->wallet_points ?? 0);
+    }
+
+    /** Every movement of this user's points, newest first. */
+    public function pointsLedger()
+    {
+        return $this->hasMany(Point::class, 'user_id', 'user_id');
     }
 
     /**
