@@ -49,6 +49,67 @@ class FcmService
         }
     }
 
+    /**
+     * Push an order event.
+     *
+     * Carries the transaction and item ids so tapping the notification can
+     * open the order straight away instead of dumping the user on a list.
+     */
+    public function sendOrderNotification(
+        \App\Models\Transaction $transaction,
+        \App\Models\User $recipient,
+        string $type,
+        string $title,
+        string $body,
+    ): void {
+        $tokens = FcmDeviceToken::where('user_id', $recipient->user_id)->pluck('token')->all();
+
+        if (!$tokens) {
+            return;
+        }
+
+        $transaction->loadMissing(['item', 'buyer.studentInfo']);
+        $buyerInfo = $transaction->buyer?->studentInfo;
+        $buyerName = trim(($buyerInfo?->first_name ?? '') . ' ' . ($buyerInfo?->last_name ?? ''))
+            ?: ($transaction->buyer?->email ?? 'A buyer');
+
+        $data = [
+            'type' => $type,
+            'transaction_id' => (string) $transaction->transaction_id,
+            'item_id' => (string) $transaction->item_id,
+            'item_title' => (string) ($transaction->item?->title ?? ''),
+            'buyer_id' => (string) $transaction->buyer_id,
+            'buyer_name' => $buyerName,
+            'amount_due' => (string) $transaction->amount_due,
+            'status' => (string) $transaction->status,
+            'title' => $title,
+            'body' => $body,
+        ];
+
+        foreach ($tokens as $token) {
+            try {
+                $response = Http::withToken($this->accessToken())
+                    ->post('https://fcm.googleapis.com/v1/projects/' . config('services.fcm.project_id') . '/messages:send', [
+                        'message' => [
+                            'token' => $token,
+                            'data' => $data,
+                            'android' => ['priority' => 'HIGH'],
+                        ],
+                    ]);
+
+                if ($response->status() === 404 || $response->status() === 400) {
+                    FcmDeviceToken::where('token', $token)->delete();
+                }
+
+                if (!$response->successful()) {
+                    Log::warning('FCM order send failed', ['status' => $response->status()]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('FCM order exception', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
     private function accessToken(): string
     {
         $credentialsPath = config('services.fcm.credentials');

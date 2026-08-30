@@ -31,8 +31,10 @@ class CheckoutService
      */
     public const RESERVATION_HOURS = 24;
 
-    public function __construct(private readonly PointsLedger $ledger)
-    {
+    public function __construct(
+        private readonly PointsLedger $ledger,
+        private readonly OrderChatNotifier $notifier,
+    ) {
     }
 
     /**
@@ -83,7 +85,7 @@ class CheckoutService
      */
     public function checkout(Item $item, User $buyer, int $pointsRequested, string $paymentMethod): Transaction
     {
-        return DB::transaction(function () use ($item, $buyer, $pointsRequested, $paymentMethod) {
+        $order = DB::transaction(function () use ($item, $buyer, $pointsRequested, $paymentMethod) {
             // Re-read under a lock: between rendering the catalog and pressing
             // buy, another buyer may have taken this item.
             $locked = Item::where('item_id', $item->item_id)->lockForUpdate()->firstOrFail();
@@ -152,6 +154,12 @@ class CheckoutService
 
             return $transaction->fresh();
         });
+
+        // Outside the transaction on purpose: posting a chat notice must never
+        // be able to roll back a checkout that already succeeded.
+        $this->notifier->orderPlaced($order, $item, $buyer);
+
+        return $order;
     }
 
     /** Record a submitted GCash proof and hand the order to Admin. */
@@ -176,7 +184,15 @@ class CheckoutService
             'status' => Transaction::STATUS_PAYMENT_PROOF_SUBMITTED,
         ]);
 
-        return $transaction->fresh();
+        $fresh = $transaction->fresh();
+        $item = Item::where('item_id', $fresh->item_id)->first();
+        $buyer = User::where('user_id', $fresh->buyer_id)->first();
+
+        if ($item !== null && $buyer !== null) {
+            $this->notifier->proofSubmitted($fresh, $item, $buyer);
+        }
+
+        return $fresh;
     }
 
     /** Admin accepts the payment. The item stays held for the buyer. */
@@ -193,7 +209,10 @@ class CheckoutService
             'status' => Transaction::STATUS_RESERVED,
         ]);
 
-        return $transaction->fresh();
+        $fresh = $transaction->fresh();
+        $this->announce($fresh, '✅ Your payment has been verified. The item is reserved for you.');
+
+        return $fresh;
     }
 
     /**
@@ -224,7 +243,10 @@ class CheckoutService
                 'cancel_reason' => $reason,
             ]);
 
-            return $locked->fresh();
+            $fresh = $locked->fresh();
+            $this->announce($fresh, '❌ Your payment proof was declined.', $reason);
+
+            return $fresh;
         });
     }
 
@@ -243,7 +265,10 @@ class CheckoutService
             'status' => Transaction::STATUS_READY_FOR_PICKUP,
         ]);
 
-        return $transaction->fresh();
+        $fresh = $transaction->fresh();
+        $this->announce($fresh, '📦 Your item is ready for pickup at the store.');
+
+        return $fresh;
     }
 
     /**
@@ -297,7 +322,15 @@ class CheckoutService
                 ->where('status', 'active')
                 ->update(['status' => 'completed']);
 
-            return $locked->fresh();
+            $fresh = $locked->fresh();
+            $earned = $fresh->reward_points_earned;
+            $this->announce(
+                $fresh,
+                '🎉 Order completed. Thank you!'
+                    . ($earned > 0 ? " You earned {$earned} reward point(s)." : ''),
+            );
+
+            return $fresh;
         });
     }
 
@@ -330,7 +363,10 @@ class CheckoutService
                 'cancel_reason' => $reason,
             ]);
 
-            return $locked->fresh();
+            $fresh = $locked->fresh();
+            $this->announce($fresh, '⚠️ This order was cancelled.', $reason);
+
+            return $fresh;
         });
     }
 
@@ -372,6 +408,16 @@ class CheckoutService
     }
 
     // ── Internals ────────────────────────────────────────────────────────
+
+    /** Tell the buyer, in the item's own conversation, what just happened. */
+    private function announce(Transaction $transaction, string $headline, ?string $reason = null): void
+    {
+        $item = Item::where('item_id', $transaction->item_id)->first();
+
+        if ($item !== null) {
+            $this->notifier->outcome($transaction, $item, $headline, $reason);
+        }
+    }
 
     /**
      * @throws RuntimeException

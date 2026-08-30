@@ -83,6 +83,7 @@ Route::middleware('auth:sanctum')->group(function () {
         // Superseded by POST /api/checkout; kept for older app builds.
         Route::post('/', [TransactionController::class, 'createTransaction']);
         Route::get('/', [TransactionController::class, 'getUserTransactions']);
+        Route::get('/{transaction_id}/receipt', [TransactionController::class, 'getReceipt']);
     });
 
     // Points routes
