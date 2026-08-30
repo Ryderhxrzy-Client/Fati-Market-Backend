@@ -11,7 +11,10 @@ return new class extends Migration
         Schema::create('fcm_device_tokens', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
-            $table->text('token')->unique();
+            // FCM tokens can be long, so keep the full token in TEXT and
+            // index a fixed-length SHA-256 hash instead of indexing TEXT.
+            $table->text('token');
+            $table->char('token_hash', 64)->unique();
             $table->string('device_id')->nullable();
             $table->string('platform', 20)->default('android');
             $table->timestamp('last_seen_at')->nullable();
