@@ -89,6 +89,10 @@ class TransactionPresenter
             'transaction_id' => $transaction->transaction_id,
             // Printed on the receipt and quoted in chat.
             'receipt_no' => 'FM-' . str_pad((string) $transaction->transaction_id, 6, '0', STR_PAD_LEFT),
+            // Both audiences need these: the buyer list filters on buyer_id,
+            // and it used to be missing from the buyer payload entirely.
+            'buyer_id' => $transaction->buyer_id,
+            'seller_id' => $transaction->seller_id,
             'item_id' => $transaction->item_id,
             'item' => $transaction->relationLoaded('item') && $transaction->item ? [
                 'item_id' => $transaction->item->item_id,
