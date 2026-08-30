@@ -18,7 +18,10 @@ return new class extends Migration
             $table->timestamps();
 
             $table->index('user_id');
-            $table->foreign('user_id')->references('user_id')->on('users')->cascadeOnDelete();
+            // The live users.user_id column predates Laravel migrations and may
+            // use a different integer width/signedness. Keep this table
+            // compatible with the existing production schema; the API still
+            // validates that user_id belongs to the authenticated user.
         });
     }
 
