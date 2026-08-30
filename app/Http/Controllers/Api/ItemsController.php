@@ -3,134 +3,96 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ItemPresenter;
 use App\Models\Item;
 use App\Models\ItemPhoto;
-use Cloudinary\Cloudinary;
+use App\Services\PhotoUploader;
+use App\Support\Money;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 class ItemsController extends Controller
 {
+    public function __construct(private readonly PhotoUploader $photos)
+    {
+    }
+
     /**
-     * Create a new item
+     * Create a new item.
      * POST /api/items
+     *
+     * The price is a peso amount - the student's asking price - and the
+     * listing always lands in `pending`. A student cannot publish their own
+     * listing; only Admin can, and only after physical turnover.
      */
     public function createItem(Request $request)
     {
         try {
-            // Validate request - photos can be single file or array
             $validated = $request->validate([
                 'title' => ['required', 'string', 'max:255'],
                 'description' => ['required', 'string', 'max:1000'],
                 'category_id' => ['required', 'integer', 'exists:categories,category_id'],
-                'price_points' => ['required', 'integer', 'min:0'],
+                // Older app builds still send `price_points`. It is accepted as
+                // a peso figure so the deployed app keeps working during the
+                // rollout, then normalised below.
+                'seller_asking_price' => ['required_without:price_points', 'nullable', 'string', 'max:20'],
+                'price_points' => ['required_without:seller_asking_price', 'nullable', 'numeric', 'min:0'],
                 'photos' => ['required'],
             ]);
 
-            // Get photos and ensure they're in an array (single file or multiple)
+            $askingPrice = $this->parsePrice(
+                $validated['seller_asking_price'] ?? $validated['price_points'] ?? null
+            );
+
+            if ($askingPrice === null || $askingPrice->isNegative()) {
+                return response()->json([
+                    'message' => 'Invalid asking price',
+                    'errors' => ['seller_asking_price' => ['Enter a valid peso amount, for example 200 or 199.50.']],
+                ], 422);
+            }
+
             $photos = $request->file('photos');
             if (!is_array($photos)) {
                 $photos = [$photos];
             }
 
-            // Validate each photo
-            foreach ($photos as $photo) {
-                if (!$photo || !$photo->isValid()) {
-                    return response()->json([
-                        'message' => 'Invalid file uploaded',
-                        'error' => 'One or more files are invalid',
-                    ], 422);
-                }
-                if (!in_array($photo->getMimeType(), ['image/jpeg', 'image/png'])) {
-                    return response()->json([
-                        'message' => 'Invalid file type',
-                        'error' => 'Only JPG and PNG images are allowed',
-                    ], 422);
-                }
-                if ($photo->getSize() > 5120 * 1024) {
-                    return response()->json([
-                        'message' => 'File too large',
-                        'error' => 'Maximum file size is 5MB',
-                    ], 422);
-                }
+            if ($error = $this->photos->validateImages($photos)) {
+                return response()->json($error, 422);
             }
-
-            // Initialize Cloudinary
-            $cloudinary = new Cloudinary([
-                'cloud' => [
-                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                    'api_key' => env('CLOUDINARY_KEY'),
-                    'api_secret' => env('CLOUDINARY_SECRET'),
-                ]
-            ]);
 
             Log::info('Creating new item', [
                 'seller_id' => $request->user()->user_id,
                 'title' => $validated['title'],
             ]);
 
-            // Create item
             $item = Item::create([
                 'seller_id' => $request->user()->user_id,
                 'title' => $validated['title'],
                 'description' => $validated['description'],
                 'category_id' => $validated['category_id'],
-                'price_points' => $validated['price_points'],
+                'seller_asking_price' => $askingPrice->toDecimalString(),
+                'price_source' => 'cash',
+                'seller_payout_status' => Item::PAYOUT_UNPAID,
+                'reward_points' => 0,
+                // Newly uploaded items always await Admin review.
+                'status' => Item::STATUS_PENDING,
+                // Legacy column kept populated so older admin builds and the
+                // historical reports still read a sane number.
+                'price_points' => intdiv($askingPrice->centavos(), 100),
                 'markup_points' => 0,
-                'status' => 'private',
             ]);
 
-            Log::info('Item created', ['item_id' => $item->item_id]);
+            $photoUrls = $this->photos->uploadMany($photos, 'items', $item->item_id);
 
-            // Upload photos to Cloudinary and create records
-            $photoUrls = [];
-            foreach ($photos as $photo) {
-                try {
-                    Log::info('Uploading photo to Cloudinary', [
-                        'item_id' => $item->item_id,
-                        'file' => $photo->getClientOriginalName(),
-                    ]);
-
-                    $uploadResult = $cloudinary->uploadApi()->upload(
-                        $photo->getRealPath(),
-                        [
-                            'folder' => 'items',
-                            'resource_type' => 'image',
-                        ]
-                    );
-
-                    $photoUrl = $uploadResult['secure_url'];
-
-                    // Save photo record
-                    ItemPhoto::create([
-                        'item_id' => $item->item_id,
-                        'photo_url' => $photoUrl,
-                    ]);
-
-                    $photoUrls[] = $photoUrl;
-
-                    Log::info('Photo uploaded successfully', ['photo_url' => $photoUrl]);
-                } catch (\Exception $e) {
-                    Log::error('Failed to upload photo', ['error' => $e->getMessage()]);
-                    // Continue with other photos even if one fails
-                }
-            }
+            $item->load(['photos', 'seller']);
 
             return response()->json([
                 'message' => 'Item created successfully',
-                'data' => [
-                    'item_id' => $item->item_id,
-                    'seller_id' => $item->seller_id,
-                    'title' => $item->title,
-                    'description' => $item->description,
-                    'category_id' => $item->category_id,
-                    'price_points' => $item->price_points,
-                    'status' => $item->status,
-                    'photos' => $photoUrls,
-                    'created_at' => $item->created_at,
-                ]
+                'data' => array_merge(ItemPresenter::forSeller($item), ['photos' => $photoUrls]),
             ], 201);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Error creating item', ['error' => $e->getMessage()]);
             return response()->json([
@@ -141,131 +103,129 @@ class ItemsController extends Controller
     }
 
     /**
-     * Get all items with optional filters
-     * GET /api/items?status=public&category_id=1
+     * Get items with optional filters.
+     * GET /api/items?status=public&category_id=1&sort=price_asc
      *
-     * Status filter:
-     * - private: Only shows current user's private items (requires authentication)
-     * - public: Shows all public items
-     * - acquired, reserved, sold: Shows all items with these statuses
+     * Defaults to the public catalog. Only `public` items are ever shown to a
+     * buyer; `pending` and `rejected` are scoped to the requesting seller's
+     * own listings.
      */
     public function getAllItems(Request $request)
     {
         try {
-            // Try to authenticate user from Bearer token if provided
-            $user = null;
-            if ($request->bearerToken()) {
-                // Validate Sanctum token
-                try {
-                    $personalAccessToken = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
-                    if ($personalAccessToken) {
-                        $user = $personalAccessToken->tokenable;
-                    }
-                } catch (\Exception $e) {
-                    Log::warning('Invalid token provided', ['error' => $e->getMessage()]);
-                }
-            }
+            $user = $this->resolveOptionalUser($request);
 
-            // Build query
             $query = Item::with([
-                'seller' => function ($q) {
-                    $q->select('user_id', 'email');
-                },
-                'photos' => function ($q) {
-                    $q->select('photo_id', 'item_id', 'photo_url');
-                }
+                'seller' => fn ($q) => $q->select('user_id', 'email'),
+                'photos' => fn ($q) => $q->select('photo_id', 'item_id', 'photo_url'),
             ]);
 
-            // Status filtering logic
-            if ($request->has('status')) {
-                $status = $request->query('status');
+            $status = $request->query('status', Item::STATUS_PUBLIC);
 
-                // Validate status is allowed
-                if (!in_array($status, ['private', 'public', 'acquired', 'reserved', 'sold'])) {
-                    return response()->json([
-                        'message' => 'Invalid status. Allowed values: private, public, acquired, reserved, sold',
-                    ], 422);
-                }
-
-                if ($status === 'private') {
-                    // For private items, only show current user's items
-                    if (!$user) {
-                        return response()->json([
-                            'message' => 'Authentication required to view private items',
-                        ], 401);
-                    }
-                    $query->where('status', 'private')
-                        ->where('seller_id', $user->user_id);
-                } else {
-                    // For public, acquired, reserved, sold - show all items
-                    $query->where('status', $status);
-                }
-            } else {
-                // If no status specified, default to showing public items
-                $query->where('status', 'public');
+            // 'private' is the old name for 'pending'.
+            if ($status === Item::STATUS_LEGACY_PRIVATE) {
+                $status = Item::STATUS_PENDING;
             }
 
-            // Category filtering
-            if ($request->has('category_id')) {
+            if (!in_array($status, Item::ALL_STATUSES, true)) {
+                return response()->json([
+                    'message' => 'Invalid status. Allowed values: ' . implode(', ', Item::ALL_STATUSES),
+                ], 422);
+            }
+
+            $isOwnListings = in_array($status, [Item::STATUS_PENDING, Item::STATUS_REJECTED], true);
+
+            if ($isOwnListings) {
+                // A pending listing belongs to its seller and to Admin, and to
+                // nobody else - it is not part of any public catalog.
+                if (!$user) {
+                    return response()->json([
+                        'message' => 'Authentication required to view your own listings',
+                    ], 401);
+                }
+
+                $statuses = $status === Item::STATUS_PENDING
+                    ? [Item::STATUS_PENDING, Item::STATUS_LEGACY_PRIVATE]
+                    : [$status];
+
+                $query->whereIn('status', $statuses);
+
+                if (!$user->isAdmin()) {
+                    $query->where('seller_id', $user->user_id);
+                }
+            } else {
+                $query->where('status', $status);
+            }
+
+            if ($request->filled('category_id')) {
                 $query->where('category_id', $request->query('category_id'));
             }
 
-            if ($request->has('category')) {
-                // Filter by category name for backwards compatibility
-                $query->whereHas('category', function ($q) {
-                    $q->where('name', 'like', '%' . request()->query('category') . '%');
+            if ($request->filled('category')) {
+                $category = $request->query('category');
+                $query->whereHas('category', fn ($q) => $q->where('name', 'like', "%{$category}%"));
+            }
+
+            if ($request->filled('search')) {
+                $search = $request->query('search');
+                $query->where(function ($q) use ($search) {
+                    $q->where('title', 'like', "%{$search}%")
+                        ->orWhere('description', 'like', "%{$search}%");
                 });
             }
 
-            // Price filtering (for private items only)
-            if ($request->has('price_min')) {
-                $query->where('price_points', '>=', $request->query('price_min'));
+            // Price filtering and sorting run on the buyer-facing peso price
+            // for catalog views, and on the asking price for a seller's own
+            // list. The old code filtered on price_points even for public
+            // items, whose displayed price came from a different column.
+            $priceColumn = $isOwnListings ? 'seller_asking_price' : 'public_price';
+
+            if ($request->filled('price_min')) {
+                $min = $this->parsePrice($request->query('price_min'));
+                if ($min !== null) {
+                    $query->where($priceColumn, '>=', $min->toDecimalString());
+                }
             }
 
-            if ($request->has('price_max')) {
-                $query->where('price_points', '<=', $request->query('price_max'));
+            if ($request->filled('price_max')) {
+                $max = $this->parsePrice($request->query('price_max'));
+                if ($max !== null) {
+                    $query->where($priceColumn, '<=', $max->toDecimalString());
+                }
             }
 
-            if ($request->has('seller_id')) {
+            if ($request->filled('seller_id')) {
                 $query->where('seller_id', $request->query('seller_id'));
             }
 
-            // Get items ordered by newest first
-            $items = $query->orderBy('created_at', 'desc')->get()
-                ->map(function ($item) {
-                    // For private items, show price_points
-                    // For public/acquired/reserved/sold items, show markup_points
-                    if ($item->status === 'private') {
-                        $points = $item->price_points;
-                        $points_label = 'price_points';
-                    } else {
-                        $points = $item->markup_points;
-                        $points_label = 'markup_points';
-                    }
+            match ($request->query('sort')) {
+                'price_asc' => $query->orderBy($priceColumn, 'asc'),
+                'price_desc' => $query->orderBy($priceColumn, 'desc'),
+                'oldest' => $query->orderBy('created_at', 'asc'),
+                default => $query->orderBy('created_at', 'desc'),
+            };
 
-                    return [
-                        'item_id' => $item->item_id,
-                        'seller_id' => $item->seller_id,
-                        'seller_email' => $item->seller->email,
-                        'title' => $item->title,
-                        'description' => $item->description,
-                        'category_id' => $item->category_id,
-                        $points_label => $points,
-                        'status' => $item->status,
-                        'photos' => $item->photos->pluck('photo_url')->toArray(),
-                        'created_at' => $item->created_at,
-                    ];
-                });
+            $items = $query->get()->map(function (Item $item) use ($user) {
+                $isOwner = $user && $item->seller_id === $user->user_id;
+
+                // A seller looking at their own unpublished listing sees their
+                // asking price and no reward figure; everyone else sees the
+                // catalog view.
+                return $isOwner && !$item->isPurchasable()
+                    ? ItemPresenter::forSeller($item)
+                    : ItemPresenter::forBuyer($item);
+            });
 
             return response()->json([
                 'message' => 'Items retrieved successfully',
                 'data' => $items,
                 'count' => $items->count(),
                 'filters' => [
-                    'status' => $request->query('status') ?? 'public',
+                    'status' => $status,
                     'category_id' => $request->query('category_id'),
                     'seller_id' => $request->query('seller_id'),
-                ]
+                    'sort' => $request->query('sort', 'newest'),
+                ],
             ], 200);
 
         } catch (\Exception $e) {
@@ -278,43 +238,39 @@ class ItemsController extends Controller
     }
 
     /**
-     * Get specific item details
+     * Get item details.
      * GET /api/items/{item_id}
      */
     public function getItemDetails(Request $request, $itemId)
     {
         try {
             $item = Item::with([
-                'seller' => function ($q) {
-                    $q->select('user_id', 'email');
-                },
-                'photos' => function ($q) {
-                    $q->select('photo_id', 'item_id', 'photo_url');
-                }
+                'seller' => fn ($q) => $q->select('user_id', 'email'),
+                'photos' => fn ($q) => $q->select('photo_id', 'item_id', 'photo_url'),
             ])->where('item_id', $itemId)->first();
 
             if (!$item) {
-                return response()->json([
-                    'message' => 'Item not found',
-                ], 404);
+                return response()->json(['message' => 'Item not found'], 404);
+            }
+
+            $user = $this->resolveOptionalUser($request);
+
+            if ($user?->isAdmin()) {
+                $payload = ItemPresenter::forAdmin($item);
+            } elseif ($user && $item->seller_id === $user->user_id && !$item->isPurchasable()) {
+                $payload = ItemPresenter::forSeller($item);
+            } else {
+                // An unpublished item is not browsable by other students.
+                if (!in_array($item->status, [Item::STATUS_PUBLIC, Item::STATUS_RESERVED, Item::STATUS_SOLD], true)) {
+                    return response()->json(['message' => 'Item not found'], 404);
+                }
+
+                $payload = ItemPresenter::forBuyer($item);
             }
 
             return response()->json([
                 'message' => 'Item details retrieved successfully',
-                'data' => [
-                    'item_id' => $item->item_id,
-                    'seller_id' => $item->seller_id,
-                    'seller_email' => $item->seller->email,
-                    'title' => $item->title,
-                    'description' => $item->description,
-                    'category_id' => $item->category_id,
-                    'price_points' => $item->price_points,
-                    'markup_points' => $item->markup_points,
-                    'status' => $item->status,
-                    'photos' => $item->photos->pluck('photo_url')->toArray(),
-                    'created_at' => $item->created_at,
-                    'updated_at' => $item->updated_at,
-                ]
+                'data' => $payload,
             ], 200);
 
         } catch (\Exception $e) {
@@ -327,8 +283,13 @@ class ItemsController extends Controller
     }
 
     /**
-     * Update an item
+     * Update an item.
      * PUT /api/items/{item_id}
+     *
+     * A seller may correct the details of a listing that is still pending.
+     * `status` is deliberately not accepted: publishing is an Admin action
+     * gated on physical turnover. The previous version of this endpoint
+     * accepted `status` and let a student set their own item to `public`.
      */
     public function updateItem(Request $request, $itemId)
     {
@@ -336,45 +297,58 @@ class ItemsController extends Controller
             $item = Item::where('item_id', $itemId)->first();
 
             if (!$item) {
-                return response()->json([
-                    'message' => 'Item not found',
-                ], 404);
+                return response()->json(['message' => 'Item not found'], 404);
             }
 
-            // Check ownership
             if ($item->seller_id !== $request->user()->user_id) {
                 return response()->json([
                     'message' => 'Unauthorized. You can only update your own items.',
                 ], 403);
             }
 
-            // Validate request
+            if (!$item->isPending()) {
+                return response()->json([
+                    'message' => 'This listing has already been accepted by the admin and can no longer be edited.',
+                ], 409);
+            }
+
             $validated = $request->validate([
-                'title' => ['string', 'max:255'],
-                'description' => ['string', 'max:1000'],
-                'category_id' => ['integer', 'exists:categories,category_id'],
-                'price_points' => ['integer', 'min:0'],
-                'status' => ['in:private,acquired,public,reserved,sold'],
+                'title' => ['sometimes', 'string', 'max:255'],
+                'description' => ['sometimes', 'string', 'max:1000'],
+                'category_id' => ['sometimes', 'integer', 'exists:categories,category_id'],
+                'seller_asking_price' => ['sometimes', 'string', 'max:20'],
+                'price_points' => ['sometimes', 'numeric', 'min:0'],
             ]);
 
-            Log::info('Updating item', ['item_id' => $itemId]);
+            $updates = array_intersect_key($validated, array_flip(['title', 'description', 'category_id']));
 
-            // Update only provided fields
-            $item->update($validated);
+            $rawPrice = $validated['seller_asking_price'] ?? $validated['price_points'] ?? null;
+
+            if ($rawPrice !== null) {
+                $price = $this->parsePrice($rawPrice);
+
+                if ($price === null || $price->isNegative()) {
+                    return response()->json([
+                        'message' => 'Invalid asking price',
+                        'errors' => ['seller_asking_price' => ['Enter a valid peso amount.']],
+                    ], 422);
+                }
+
+                $updates['seller_asking_price'] = $price->toDecimalString();
+                $updates['price_points'] = intdiv($price->centavos(), 100);
+            }
+
+            if ($updates !== []) {
+                $item->update($updates);
+            }
 
             return response()->json([
                 'message' => 'Item updated successfully',
-                'data' => [
-                    'item_id' => $item->item_id,
-                    'title' => $item->title,
-                    'description' => $item->description,
-                    'category_id' => $item->category_id,
-                    'price_points' => $item->price_points,
-                    'status' => $item->status,
-                    'updated_at' => $item->updated_at,
-                ]
+                'data' => ItemPresenter::forSeller($item->fresh(['photos', 'seller'])),
             ], 200);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Error updating item', ['error' => $e->getMessage()]);
             return response()->json([
@@ -385,7 +359,7 @@ class ItemsController extends Controller
     }
 
     /**
-     * Delete an item
+     * Delete an item.
      * DELETE /api/items/{item_id}
      */
     public function deleteItem(Request $request, $itemId)
@@ -394,29 +368,29 @@ class ItemsController extends Controller
             $item = Item::where('item_id', $itemId)->first();
 
             if (!$item) {
-                return response()->json([
-                    'message' => 'Item not found',
-                ], 404);
+                return response()->json(['message' => 'Item not found'], 404);
             }
 
-            // Check ownership
             if ($item->seller_id !== $request->user()->user_id) {
                 return response()->json([
                     'message' => 'Unauthorized. You can only delete your own items.',
                 ], 403);
             }
 
+            // Once Admin has taken physical possession the listing is part of
+            // the shop's inventory and its history must survive.
+            if (!$item->isPending()) {
+                return response()->json([
+                    'message' => 'This listing can no longer be deleted because the admin has already accepted it.',
+                ], 409);
+            }
+
             Log::info('Deleting item', ['item_id' => $itemId]);
 
-            // Delete photos first
             ItemPhoto::where('item_id', $itemId)->delete();
-
-            // Delete item
             $item->delete();
 
-            return response()->json([
-                'message' => 'Item deleted successfully',
-            ], 200);
+            return response()->json(['message' => 'Item deleted successfully'], 200);
 
         } catch (\Exception $e) {
             Log::error('Error deleting item', ['error' => $e->getMessage()]);
@@ -427,191 +401,50 @@ class ItemsController extends Controller
         }
     }
 
+    // ── Helpers ──────────────────────────────────────────────────────────
+
     /**
-     * Admin: Get all items by status (no user filtering)
-     * GET /api/admin/items?status=private&category_id=1
+     * Parse a client-supplied peso amount, returning null when it is not a
+     * well-formed money value. This captures the buyer's stated intent only -
+     * every total is recomputed server-side.
      */
-    public function adminGetAllItems(Request $request)
+    private function parsePrice(string|int|float|null $raw): ?Money
     {
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+
         try {
-            // Check if user is admin
-            if ($request->user()->role !== 'admin') {
-                return response()->json([
-                    'message' => 'Admin access required',
-                ], 403);
-            }
-
-            // Build query
-            $query = Item::with([
-                'seller' => function ($q) {
-                    $q->select('user_id', 'email');
-                },
-                'photos' => function ($q) {
-                    $q->select('photo_id', 'item_id', 'photo_url');
-                }
-            ]);
-
-            // Status filtering (required)
-            if ($request->has('status')) {
-                $status = $request->query('status');
-
-                // Validate status is allowed
-                if (!in_array($status, ['private', 'public', 'acquired', 'reserved', 'sold'])) {
-                    return response()->json([
-                        'message' => 'Invalid status. Allowed values: private, public, acquired, reserved, sold',
-                    ], 422);
-                }
-
-                $query->where('status', $status);
-            } else {
-                // If no status specified, return all items regardless of status
-                // Admin can see everything
-            }
-
-            // Category filtering
-            if ($request->has('category_id')) {
-                $query->where('category_id', $request->query('category_id'));
-            }
-
-            if ($request->has('category')) {
-                // Filter by category name
-                $query->whereHas('category', function ($q) {
-                    $q->where('name', 'like', '%' . request()->query('category') . '%');
-                });
-            }
-
-            // Price filtering
-            if ($request->has('price_min')) {
-                $query->where('price_points', '>=', $request->query('price_min'));
-            }
-
-            if ($request->has('price_max')) {
-                $query->where('price_points', '<=', $request->query('price_max'));
-            }
-
-            // Seller filtering
-            if ($request->has('seller_id')) {
-                $query->where('seller_id', $request->query('seller_id'));
-            }
-
-            // Get items ordered by newest first
-            $items = $query->orderBy('created_at', 'desc')->get()
-                ->map(function ($item) {
-                    // For private and acquired items, show price_points
-                    // For public/reserved/sold items, show markup_points
-                    if ($item->status === 'private' || $item->status === 'acquired') {
-                        $points = $item->price_points;
-                        $points_label = 'price_points';
-                    } else {
-                        $points = $item->markup_points;
-                        $points_label = 'markup_points';
-                    }
-
-                    $result = [
-                        'item_id' => $item->item_id,
-                        'seller_id' => $item->seller_id,
-                        'seller_email' => $item->seller->email,
-                        'title' => $item->title,
-                        'description' => $item->description,
-                        'category_id' => $item->category_id,
-                        $points_label => $points,
-                        'status' => $item->status,
-                        'photos' => $item->photos->pluck('photo_url')->toArray(),
-                        'created_at' => $item->created_at,
-                        'updated_at' => $item->updated_at,
-                    ];
-
-                    // Add markup_points for private and acquired items only (price_points is already the main field)
-                    if ($item->status === 'private' || $item->status === 'acquired') {
-                        $result['markup_points'] = $item->markup_points;
-                    }
-
-                    return $result;
-                });
-
-            return response()->json([
-                'message' => 'Admin: Items retrieved successfully',
-                'data' => $items,
-                'count' => $items->count(),
-                'filters' => [
-                    'status' => $request->query('status') ?? 'all',
-                    'category_id' => $request->query('category_id'),
-                    'seller_id' => $request->query('seller_id'),
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            Log::error('Error getting admin items', ['error' => $e->getMessage()]);
-            return response()->json([
-                'message' => 'Failed to retrieve items',
-                'error' => $e->getMessage(),
-            ], 500);
+            return Money::fromPesos(is_string($raw) ? trim($raw) : $raw);
+        } catch (\InvalidArgumentException) {
+            return null;
         }
     }
 
     /**
-     * Admin: Update any item (override ownership check)
-     * PUT /api/admin/items/{item_id}
+     * Resolve the user behind an optional Bearer token.
+     *
+     * These endpoints are public but behave differently when a token is
+     * present, so authentication is attempted rather than required.
      */
-    public function adminUpdateItem(Request $request, $itemId)
+    private function resolveOptionalUser(Request $request)
     {
+        if ($request->user()) {
+            return $request->user();
+        }
+
+        if (!$request->bearerToken()) {
+            return null;
+        }
+
         try {
-            // Check if user is admin
-            if ($request->user()->role !== 'admin') {
-                return response()->json([
-                    'message' => 'Admin access required',
-                ], 403);
-            }
+            $token = \Laravel\Sanctum\PersonalAccessToken::findToken($request->bearerToken());
 
-            $item = Item::where('item_id', $itemId)->first();
-
-            if (!$item) {
-                return response()->json([
-                    'message' => 'Item not found',
-                ], 404);
-            }
-
-            // Validate request
-            $validated = $request->validate([
-                'title' => ['string', 'max:255'],
-                'description' => ['string', 'max:1000'],
-                'category_id' => ['integer', 'exists:categories,category_id'],
-                'price_points' => ['integer', 'min:0'],
-                'markup_points' => ['integer', 'min:0'],
-                'status' => ['in:private,acquired,public,reserved,sold'],
-            ]);
-
-            Log::info('Admin updating item', [
-                'item_id' => $itemId,
-                'admin_id' => $request->user()->user_id,
-                'original_seller_id' => $item->seller_id
-            ]);
-
-            // Update only provided fields
-            $item->update($validated);
-
-            return response()->json([
-                'message' => 'Admin: Item updated successfully',
-                'data' => [
-                    'item_id' => $item->item_id,
-                    'seller_id' => $item->seller_id,
-                    'title' => $item->title,
-                    'description' => $item->description,
-                    'category_id' => $item->category_id,
-                    'price_points' => $item->price_points,
-                    'markup_points' => $item->markup_points,
-                    'status' => $item->status,
-                    'updated_at' => $item->updated_at,
-                    'updated_by_admin' => $request->user()->user_id,
-                ]
-            ], 200);
-
+            return $token?->tokenable;
         } catch (\Exception $e) {
-            Log::error('Error updating admin item', ['error' => $e->getMessage()]);
-            return response()->json([
-                'message' => 'Failed to update item',
-                'error' => $e->getMessage(),
-            ], 500);
+            Log::warning('Invalid token provided', ['error' => $e->getMessage()]);
+
+            return null;
         }
     }
 }
