@@ -149,7 +149,12 @@ class CheckoutController extends Controller
      */
     public function uploadPaymentProof(Request $request, $transactionId)
     {
-        $request->validate(['proof' => ['required', 'file']]);
+        $request->validate([
+            'proof' => ['required', 'file'],
+            // The GCash reference makes a payment reconcilable; the screenshot
+            // alone is awkward for Admin to match against their statement.
+            'reference_number' => ['nullable', 'string', 'max:64'],
+        ]);
 
         $transaction = Transaction::where('transaction_id', $transactionId)->first();
 
@@ -175,7 +180,11 @@ class CheckoutController extends Controller
                 return response()->json(['message' => 'Failed to upload the payment proof.'], 500);
             }
 
-            $transaction = $this->checkout->attachPaymentProof($transaction, $url);
+            $transaction = $this->checkout->attachPaymentProof(
+                $transaction,
+                $url,
+                $request->input('reference_number'),
+            );
             $transaction->load(['item.photos']);
 
             return response()->json([
@@ -193,6 +202,34 @@ class CheckoutController extends Controller
 
             return response()->json(['message' => 'Failed to submit the payment proof'], 500);
         }
+    }
+
+    /**
+     * Where to send a GCash payment.
+     * GET /api/checkout/payment-details
+     *
+     * There is no live GCash gateway. The buyer scans a static QR, pays, and
+     * uploads proof for Admin to verify by hand. The details come from config
+     * so Ofelia can change the account or QR without an app release.
+     */
+    public function paymentDetails()
+    {
+        return response()->json([
+            'message' => 'Payment details retrieved successfully',
+            'data' => [
+                'gcash' => [
+                    'account_name' => config('services.gcash.account_name'),
+                    'account_number' => config('services.gcash.account_number'),
+                    'qr_image_url' => config('services.gcash.qr_image_url'),
+                    'instructions' => 'Scan the QR with your GCash app, send the exact '
+                        . 'amount due, then upload the receipt screenshot and enter the '
+                        . 'reference number below.',
+                ],
+                'cash' => [
+                    'instructions' => 'Pay at the store when you collect the item.',
+                ],
+            ],
+        ], 200);
     }
 
     /**
