@@ -90,6 +90,7 @@ class Transaction extends Model
         'reward_points_earned',
         'payment_method',
         'payment_proof',
+        'payment_reference',
         'payment_proof_submitted_at',
         'payment_status',
         'payment_verified_at',
