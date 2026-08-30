@@ -19,11 +19,7 @@ class TransactionPresenter
     public static function forAdmin(Transaction $transaction): array
     {
         return array_merge(self::common($transaction), [
-            'buyer' => [
-                'user_id' => $transaction->buyer_id,
-                'email' => $transaction->relationLoaded('buyer') ? $transaction->buyer?->email : null,
-                'wallet_points' => $transaction->relationLoaded('buyer') ? $transaction->buyer?->wallet_points : null,
-            ],
+            'buyer' => self::buyerProfile($transaction),
             'seller' => [
                 'user_id' => $transaction->seller_id,
                 'email' => $transaction->relationLoaded('seller') ? $transaction->seller?->email : null,
@@ -60,6 +56,29 @@ class TransactionPresenter
         ]);
     }
 
+    /**
+     * The buyer, as Admin needs to see them: enough to recognise the person
+     * turning up at the store and to reach them if something is wrong.
+     */
+    private static function buyerProfile(Transaction $transaction): array
+    {
+        $buyer = $transaction->relationLoaded('buyer') ? $transaction->buyer : null;
+        $info = $buyer?->relationLoaded('studentInfo') ? $buyer->studentInfo : $buyer?->studentInfo;
+
+        $name = trim(($info?->first_name ?? '') . ' ' . ($info?->last_name ?? ''));
+
+        return [
+            'user_id' => $transaction->buyer_id,
+            'email' => $buyer?->email,
+            'name' => $name !== '' ? $name : null,
+            'first_name' => $info?->first_name,
+            'last_name' => $info?->last_name,
+            'profile_picture' => $info?->profile_picture,
+            'wallet_points' => $buyer?->wallet_points,
+            'is_active' => $buyer?->is_active,
+        ];
+    }
+
     private static function common(Transaction $transaction): array
     {
         $subtotal = $transaction->subtotalMoney();
@@ -68,6 +87,8 @@ class TransactionPresenter
 
         return [
             'transaction_id' => $transaction->transaction_id,
+            // Printed on the receipt and quoted in chat.
+            'receipt_no' => 'FM-' . str_pad((string) $transaction->transaction_id, 6, '0', STR_PAD_LEFT),
             'item_id' => $transaction->item_id,
             'item' => $transaction->relationLoaded('item') && $transaction->item ? [
                 'item_id' => $transaction->item->item_id,
