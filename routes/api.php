@@ -72,6 +72,7 @@ Route::middleware('auth:sanctum')->group(function () {
      */
     Route::prefix('checkout')->group(function () {
         Route::get('/quote', [CheckoutController::class, 'quote']);
+        Route::get('/payment-details', [CheckoutController::class, 'paymentDetails']);
         Route::post('/', [CheckoutController::class, 'store']);
         Route::post('/{transaction_id}/payment-proof', [CheckoutController::class, 'uploadPaymentProof']);
         Route::post('/{transaction_id}/cancel', [CheckoutController::class, 'cancel']);

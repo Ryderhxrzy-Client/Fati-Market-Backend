@@ -40,4 +40,20 @@ return [
         'credentials' => env('FCM_CREDENTIALS'),
     ],
 
+    /*
+     * Manual GCash settlement. There is no API integration: the buyer scans
+     * this static QR, pays, and Admin verifies the proof by hand.
+     */
+    'gcash' => [
+        'account_name' => env('GCASH_ACCOUNT_NAME', 'Ofelia Store'),
+        'account_number' => env('GCASH_ACCOUNT_NUMBER'),
+        'qr_image_url' => env('GCASH_QR_IMAGE_URL'),
+    ],
+
+    'cloudinary' => [
+        'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+        'key' => env('CLOUDINARY_KEY'),
+        'secret' => env('CLOUDINARY_SECRET'),
+    ],
+
 ];

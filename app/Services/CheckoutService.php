@@ -155,8 +155,11 @@ class CheckoutService
     }
 
     /** Record a submitted GCash proof and hand the order to Admin. */
-    public function attachPaymentProof(Transaction $transaction, string $proofUrl): Transaction
-    {
+    public function attachPaymentProof(
+        Transaction $transaction,
+        string $proofUrl,
+        ?string $reference = null,
+    ): Transaction {
         if ($transaction->isTerminal()) {
             throw new RuntimeException('This order is already closed.');
         }
@@ -167,6 +170,7 @@ class CheckoutService
 
         $transaction->update([
             'payment_proof' => $proofUrl,
+            'payment_reference' => $reference,
             'payment_proof_submitted_at' => now(),
             'payment_status' => Transaction::PAYMENT_PROOF_SUBMITTED,
             'status' => Transaction::STATUS_PAYMENT_PROOF_SUBMITTED,
