@@ -68,6 +68,89 @@ class TransactionController extends Controller
     }
 
     /**
+     * The receipt for one order.
+     * GET /api/transactions/{transaction_id}/receipt
+     *
+     * Serves as the buyer's proof of transaction, whether they paid by GCash
+     * or cash at the store. Only the buyer and Admin may read it, and only an
+     * order whose payment has actually been verified produces one.
+     */
+    public function getReceipt(Request $request, $transactionId)
+    {
+        $user = $request->user();
+
+        $transaction = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])
+            ->buyerOrders()
+            ->where('transaction_id', $transactionId)
+            ->first();
+
+        if (!$transaction) {
+            return response()->json(['message' => 'Transaction not found'], 404);
+        }
+
+        if ($transaction->buyer_id !== $user->user_id && !$user->isAdmin()) {
+            return response()->json(['message' => 'This is not your order.'], 403);
+        }
+
+        $issued = $transaction->payment_verified_at ?? $transaction->completed_at;
+
+        return response()->json([
+            'message' => 'Receipt retrieved successfully',
+            'data' => [
+                'receipt_no' => 'FM-' . str_pad((string) $transaction->transaction_id, 6, '0', STR_PAD_LEFT),
+                'issued_at' => $issued,
+                // A receipt for an unverified payment would be misleading, so
+                // it is marked provisional rather than withheld.
+                'is_official' => $transaction->payment_status === Transaction::PAYMENT_VERIFIED,
+                'status' => $transaction->status,
+                'status_label' => str_replace('_', ' ', $transaction->status),
+
+                'store_name' => config('services.gcash.account_name', 'Ofelia Store'),
+
+                'buyer' => [
+                    'name' => trim(
+                        ($transaction->buyer?->studentInfo?->first_name ?? '') . ' ' .
+                        ($transaction->buyer?->studentInfo?->last_name ?? '')
+                    ) ?: $transaction->buyer?->email,
+                    'email' => $transaction->buyer?->email,
+                ],
+
+                'item' => [
+                    'item_id' => $transaction->item_id,
+                    'title' => $transaction->item?->title,
+                    'photo' => $transaction->item?->photos->first()?->photo_url,
+                ],
+
+                'lines' => [
+                    ['label' => 'Item price', 'value' => $transaction->subtotalMoney()->toDecimalString()],
+                    ['label' => 'Points used', 'value' => (string) $transaction->points_used],
+                    ['label' => 'Points discount', 'value' => '-' . $transaction->discountMoney()->toDecimalString()],
+                    ['label' => 'Amount paid', 'value' => $transaction->amountDueMoney()->toDecimalString()],
+                ],
+
+                'subtotal' => $transaction->subtotalMoney()->toDecimalString(),
+                'points_used' => $transaction->points_used,
+                'points_discount_amount' => $transaction->discountMoney()->toDecimalString(),
+                'amount_paid' => $transaction->amountDueMoney()->toDecimalString(),
+                'reward_points_earned' => $transaction->status === Transaction::STATUS_COMPLETED
+                    ? $transaction->reward_points_earned
+                    : 0,
+
+                'payment_method' => $transaction->payment_method,
+                'payment_method_label' => match ($transaction->payment_method) {
+                    Transaction::METHOD_GCASH => 'GCash',
+                    Transaction::METHOD_POINTS_FULL => 'Paid fully with points',
+                    default => 'Cash at store',
+                },
+                'payment_reference' => $transaction->payment_reference,
+                'payment_status' => $transaction->payment_status,
+                'payment_verified_at' => $transaction->payment_verified_at,
+                'completed_at' => $transaction->completed_at,
+            ],
+        ], 200);
+    }
+
+    /**
      * Legacy buyer checkout endpoint.
      * POST /api/transactions
      *
@@ -127,7 +210,7 @@ class TransactionController extends Controller
     public function getAllTransactions(Request $request)
     {
         try {
-            $query = Transaction::with(['item.photos', 'buyer', 'seller'])->buyerOrders();
+            $query = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])->buyerOrders();
 
             if ($request->filled('status')) {
                 $query->where('status', $request->query('status'));
@@ -139,6 +222,19 @@ class TransactionController extends Controller
 
             if ($request->boolean('awaiting_verification')) {
                 $query->where('payment_status', Transaction::PAYMENT_PROOF_SUBMITTED);
+            }
+
+            // Lets the chat screen show the order the conversation is about.
+            if ($request->filled('item_id')) {
+                $query->where('item_id', $request->query('item_id'));
+            }
+
+            if ($request->filled('buyer_id')) {
+                $query->where('buyer_id', $request->query('buyer_id'));
+            }
+
+            if ($request->boolean('open_only')) {
+                $query->open();
             }
 
             $transactions = $query->orderBy('transaction_date', 'desc')->get()
@@ -159,7 +255,7 @@ class TransactionController extends Controller
     /** GET /api/admin/transactions/{transaction_id} */
     public function getTransaction(Request $request, $transactionId)
     {
-        $transaction = Transaction::with(['item.photos', 'buyer', 'seller'])
+        $transaction = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])
             ->where('transaction_id', $transactionId)
             ->first();
 
@@ -184,7 +280,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Payment verified',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
     }
@@ -206,7 +302,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Payment proof rejected. The buyer\'s points have been restored.',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
     }
@@ -219,7 +315,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Marked ready for pickup',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
     }
@@ -243,7 +339,7 @@ class TransactionController extends Controller
                 'message' => $alreadyCompleted
                     ? 'This transaction was already completed.'
                     : 'Transaction completed and reward points credited.',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
                 'buyer_wallet_points' => $buyer?->wallet_points,
                 'reward_points_credited' => $alreadyCompleted ? 0 : $transaction->reward_points_earned,
             ], 200);
@@ -267,7 +363,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Transaction cancelled and points restored.',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
     }
@@ -306,7 +402,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Transaction status updated successfully',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
     }
@@ -385,7 +481,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Item reserved successfully',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
 
         } catch (RuntimeException $e) {
@@ -468,7 +564,7 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Item marked as sold successfully',
-                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer', 'seller'])),
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
                 'buyer_wallet_points' => $buyer->fresh()->wallet_points,
             ], 200);
 
