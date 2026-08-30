@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Message;
 use App\Models\User;
+use App\Services\FcmService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -43,6 +44,9 @@ class MessagesController extends Controller
             // Reload message with relationships
             $newMessage->load(['sender.studentInfo', 'receiver.studentInfo', 'item']);
 
+            // Push the same chat content to the receiver's registered devices.
+            app(FcmService::class)->sendChatMessage($newMessage);
+
             Log::info('Message sent', [
                 'sender_id' => $request->user()->user_id,
                 'receiver_id' => $validated['receiver_id'],
@@ -71,6 +75,16 @@ class MessagesController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /** POST /api/messages/{message_id}/read */
+    public function markRead(Request $request, $messageId)
+    {
+        $updated = Message::where('message_id', $messageId)
+            ->where('receiver_id', $request->user()->user_id)
+            ->update(['is_read' => true]);
+
+        return response()->json(['message' => $updated ? 'Message marked as read' : 'Message not found']);
     }
 
     /**
