@@ -29,6 +29,7 @@ class TransactionPresenter
                 'email' => $transaction->relationLoaded('seller') ? $transaction->seller?->email : null,
             ],
             'payment_proof' => $transaction->payment_proof,
+            'payment_reference' => $transaction->payment_reference,
             'payment_proof_submitted_at' => $transaction->payment_proof_submitted_at,
             'payment_verified_at' => $transaction->payment_verified_at,
             'payment_verified_by' => $transaction->payment_verified_by,
@@ -49,6 +50,7 @@ class TransactionPresenter
     {
         return array_merge(self::common($transaction), [
             'payment_proof' => $transaction->payment_proof,
+            'payment_reference' => $transaction->payment_reference,
             'reserved_until' => $transaction->reserved_until,
             'cancel_reason' => $transaction->cancel_reason,
             'completed_at' => $transaction->completed_at,
