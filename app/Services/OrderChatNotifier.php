@@ -44,25 +44,30 @@ class OrderChatNotifier
             return;
         }
 
+        // The buyer is the sender, so this reads in the buyer's own voice.
+        // Clients draw the order card from `transaction_id`; this text is the
+        // conversation-list preview and the fallback for older builds.
         $lines = [
-            "🛒 New order #{$transaction->transaction_id}",
-            "Item: {$item->title}",
-            'Price: ₱' . $transaction->subtotalMoney()->toFormattedString(),
+            "Hi! I'd like to order \"{$item->title}\".",
+            'Amount due: ₱' . $transaction->amountDueMoney()->toFormattedString()
+                . ' · ' . self::paymentMethodLabel($transaction),
         ];
 
         if ($transaction->points_used > 0) {
-            $lines[] = "Points used: {$transaction->points_used} "
+            $lines[] = "Used {$transaction->points_used} point(s) "
                 . '(−₱' . $transaction->discountMoney()->toFormattedString() . ')';
         }
 
-        $lines[] = 'Amount due: ₱' . $transaction->amountDueMoney()->toFormattedString();
-        $lines[] = match ($transaction->payment_method) {
-            Transaction::METHOD_GCASH => 'Payment: GCash - I will upload my receipt here.',
-            Transaction::METHOD_POINTS_FULL => 'Payment: fully covered by points.',
-            default => 'Payment: cash at the store.',
-        };
+        $lines[] = self::paymentStateSentence($transaction);
 
-        $this->post($item, $buyer, $admin, implode("\n", $lines));
+        $this->post(
+            $item,
+            $buyer,
+            $admin,
+            implode("\n", $lines),
+            Message::KIND_ORDER_PLACED,
+            $transaction,
+        );
 
         $this->fcm->sendOrderNotification(
             $transaction,
@@ -83,17 +88,24 @@ class OrderChatNotifier
         }
 
         $lines = [
-            "💳 Payment sent for order #{$transaction->transaction_id}",
-            'Amount: ₱' . $transaction->amountDueMoney()->toFormattedString(),
+            "I've sent ₱" . $transaction->amountDueMoney()->toFormattedString()
+                . ' via ' . self::paymentMethodLabel($transaction) . '.',
         ];
 
         if (!empty($transaction->payment_reference)) {
-            $lines[] = "GCash reference: {$transaction->payment_reference}";
+            $lines[] = "Reference: {$transaction->payment_reference}";
         }
 
-        $lines[] = 'Receipt uploaded - please verify.';
+        $lines[] = 'My receipt is attached - please check it, thank you!';
 
-        $this->post($item, $buyer, $admin, implode("\n", $lines));
+        $this->post(
+            $item,
+            $buyer,
+            $admin,
+            implode("\n", $lines),
+            Message::KIND_PAYMENT_SUBMITTED,
+            $transaction,
+        );
 
         $this->fcm->sendOrderNotification(
             $transaction,
@@ -124,7 +136,7 @@ class OrderChatNotifier
         }
 
         // From Admin to the buyer this time.
-        $this->post($item, $admin, $buyer, $text);
+        $this->post($item, $admin, $buyer, $text, Message::KIND_ORDER_UPDATE, $transaction);
 
         $this->fcm->sendOrderNotification(
             $transaction,
@@ -133,6 +145,35 @@ class OrderChatNotifier
             'Order update',
             "{$item->title} - {$headline}",
         );
+    }
+
+    /** How the buyer is paying, worded to sit inside a sentence. */
+    public static function paymentMethodLabel(Transaction $transaction): string
+    {
+        return match ($transaction->payment_method) {
+            Transaction::METHOD_GCASH => 'GCash',
+            Transaction::METHOD_POINTS_FULL => 'points',
+            default => 'cash at the store',
+        };
+    }
+
+    /**
+     * Where the money stands, in the buyer's voice.
+     *
+     * This is only the text fallback. A client drawing the order card reads
+     * the payment status off the order itself, so a card posted at checkout
+     * starts out unpaid and turns paid the moment Admin verifies it.
+     */
+    public static function paymentStateSentence(Transaction $transaction): string
+    {
+        return match (true) {
+            $transaction->payment_status === Transaction::PAYMENT_VERIFIED => 'Payment confirmed.',
+            $transaction->payment_status === Transaction::PAYMENT_REJECTED => 'My payment was declined.',
+            $transaction->payment_status === Transaction::PAYMENT_PROOF_SUBMITTED => 'Receipt sent - waiting for it to be checked.',
+            $transaction->payment_method === Transaction::METHOD_GCASH => 'Not paid yet - I will send my GCash receipt here.',
+            $transaction->payment_method === Transaction::METHOD_POINTS_FULL => 'Fully covered by my points.',
+            default => 'Not paid yet - I will pay in cash at the store.',
+        };
     }
 
     /** The store account. Admin ids are stable, so the first one is the owner. */
@@ -147,14 +188,22 @@ class OrderChatNotifier
      * Failures are logged rather than thrown: a chat notice must never roll
      * back a payment that already succeeded.
      */
-    private function post(Item $item, User $sender, User $receiver, string $text): void
-    {
+    private function post(
+        Item $item,
+        User $sender,
+        User $receiver,
+        string $text,
+        string $kind = Message::KIND_TEXT,
+        ?Transaction $transaction = null,
+    ): void {
         try {
             Message::create([
                 'item_id' => $item->item_id,
                 'sender_id' => $sender->user_id,
                 'receiver_id' => $receiver->user_id,
                 'message' => $text,
+                'kind' => $kind,
+                'transaction_id' => $transaction?->transaction_id,
                 'sent_at' => now(),
             ]);
         } catch (\Throwable $e) {
