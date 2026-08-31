@@ -45,9 +45,12 @@ return [
     | considered expired. This will override any values set in the token's
     | "expires_at" attribute, but first-party sessions are not affected.
     |
+    | The mobile app keeps a user signed in for a week, so tokens are given a
+    | matching seven-day life rather than living forever.
+    |
     */
 
-    'expiration' => null,
+    'expiration' => (int) env('SANCTUM_TOKEN_EXPIRATION', 60 * 24 * 7),
 
     /*
     |--------------------------------------------------------------------------
