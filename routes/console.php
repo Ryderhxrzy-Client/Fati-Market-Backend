@@ -18,3 +18,11 @@ Artisan::command('inspire', function () {
 Schedule::command('checkouts:expire')
     ->everyFifteenMinutes()
     ->withoutOverlapping();
+
+/*
+ * Clear out access tokens that lapsed more than a day ago. Sanctum already
+ * refuses an expired token, so this only keeps `personal_access_tokens` from
+ * growing without bound as week-old logins pile up.
+ */
+Schedule::command('sanctum:prune-expired --hours=24')
+    ->daily();
