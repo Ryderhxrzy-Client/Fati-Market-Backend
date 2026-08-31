@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Models\Item;
 use App\Services\ItemLifecycleService;
+use App\Services\OrderChatNotifier;
+use App\Services\PhotoUploader;
+use App\Support\ItemQr;
 use App\Support\Money;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -22,7 +25,11 @@ use RuntimeException;
  */
 class AdminInventoryController extends Controller
 {
-    public function __construct(private readonly ItemLifecycleService $lifecycle)
+    public function __construct(
+        private readonly ItemLifecycleService $lifecycle,
+        private readonly OrderChatNotifier $notifier,
+        private readonly PhotoUploader $uploader,
+    )
     {
     }
 
@@ -138,11 +145,50 @@ class AdminInventoryController extends Controller
                 return $this->invalidAmount('acquisition_price');
             }
 
+            $firstAcceptance = $item->acquisition_price === null;
             $item = $this->lifecycle->recordAcquisitionPrice($item, $price);
+
+            // The seller hears the decision where the offer lives. Only the
+            // first acceptance announces itself; a price correction is not
+            // news.
+            if ($firstAcceptance) {
+                $this->notifier->itemUpdate(
+                    $item,
+                    "Good news - your offer for \"{$item->title}\" is accepted at ₱"
+                        . $item->acquisitionPrice()->toFormattedString()
+                        . '. Your item now has a QR code: show it at the store when you bring the item in.',
+                    'Offer accepted',
+                );
+            }
 
             return response()->json([
                 'message' => 'Acquisition price recorded',
                 'data' => ItemPresenter::forAdmin($item),
+            ], 200);
+        });
+    }
+
+    /**
+     * Resolve a scanned turnover QR to the listing itself.
+     * GET /api/admin/items/scan?code=FMITEM1.7.abcdef
+     *
+     * The signature is checked before anything is looked up, so a guessed or
+     * tampered code answers 404 without confirming any item exists.
+     */
+    public function scan(Request $request)
+    {
+        $request->validate(['code' => ['required', 'string', 'max:64']]);
+
+        $itemId = ItemQr::itemIdFrom($request->query('code'));
+
+        if ($itemId === null) {
+            return response()->json(['message' => 'This is not a Fati Market item code.'], 404);
+        }
+
+        return $this->withItem($itemId, function (Item $item) {
+            return response()->json([
+                'message' => 'Item found',
+                'data' => ItemPresenter::forAdmin($item->load(['photos', 'seller'])),
             ], 200);
         });
     }
@@ -157,6 +203,19 @@ class AdminInventoryController extends Controller
 
         return $this->withItem($itemId, function (Item $item) use ($request) {
             $item = $this->lifecycle->setMeetupSchedule($item, $request->input('meetup_schedule'));
+
+            // A new time starts the 6h/1h/30m reminders over.
+            $item->update(['meetup_reminders_sent' => null]);
+
+            if ($item->meetup_schedule !== null) {
+                $this->notifier->itemUpdate(
+                    $item,
+                    "Meet-up set for \"{$item->title}\": "
+                        . \Illuminate\Support\Carbon::parse($item->meetup_schedule)->format('M j, g:i A')
+                        . '. Bring the item and show your QR code at the store.',
+                    'Meet-up scheduled',
+                );
+            }
 
             return response()->json([
                 'message' => 'Meet-up schedule saved',
@@ -178,6 +237,10 @@ class AdminInventoryController extends Controller
             'seller_payout_amount' => ['nullable', 'string', 'max:20'],
             'acquisition_price' => ['nullable', 'string', 'max:20'],
             'notes' => ['nullable', 'string', 'max:500'],
+            // The counter proof: the item being received, the seller being
+            // paid. Either or both, photographed at the scan screen.
+            'turnover_photo' => ['nullable', 'file'],
+            'payout_photo' => ['nullable', 'file'],
         ]);
 
         return $this->withItem($itemId, function (Item $item) use ($request) {
@@ -209,9 +272,29 @@ class AdminInventoryController extends Controller
                 $request->input('notes')
             );
 
+            foreach (['turnover_photo' => 'turnover_photos', 'payout_photo' => 'payout_photos'] as $field => $folder) {
+                if (!$request->hasFile($field)) {
+                    continue;
+                }
+
+                $file = $request->file($field);
+
+                if ($error = $this->uploader->validateImages([$file])) {
+                    return response()->json($error, 422);
+                }
+
+                $url = $this->uploader->upload($file, $folder);
+
+                if ($url !== null) {
+                    $item->update([
+                        $field === 'turnover_photo' ? 'turnover_photo' : 'seller_payout_photo' => $url,
+                    ]);
+                }
+            }
+
             return response()->json([
                 'message' => 'Item received and verified',
-                'data' => ItemPresenter::forAdmin($item),
+                'data' => ItemPresenter::forAdmin($item->fresh(['photos', 'seller'])),
             ], 200);
         });
     }
@@ -330,6 +413,13 @@ class AdminInventoryController extends Controller
 
         return $this->withItem($itemId, function (Item $item) use ($request) {
             $item = $this->lifecycle->reject($item, $request->input('reason'));
+
+            $this->notifier->itemUpdate(
+                $item,
+                "Your offer for \"{$item->title}\" was declined.\nReason: "
+                    . $request->input('reason'),
+                'Offer declined',
+            );
 
             return response()->json([
                 'message' => 'Item rejected',
