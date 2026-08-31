@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Models\Item;
 use App\Models\ItemPhoto;
+use App\Services\OrderChatNotifier;
 use App\Services\PhotoUploader;
 use App\Support\Money;
 use Illuminate\Http\Request;
@@ -85,6 +86,11 @@ class ItemsController extends Controller
             $photoUrls = $this->photos->uploadMany($photos, 'items', $item->item_id);
 
             $item->load(['photos', 'seller']);
+
+            // Open the item's conversation with the offer and push it to
+            // Admin. The notifier logs its own failures - a chat hiccup must
+            // never fail the listing that already exists.
+            app(OrderChatNotifier::class)->itemListed($item, $request->user());
 
             return response()->json([
                 'message' => 'Item created successfully',
