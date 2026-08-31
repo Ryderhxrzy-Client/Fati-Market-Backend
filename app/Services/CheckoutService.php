@@ -424,9 +424,8 @@ class CheckoutService
      */
     private function assertPurchasable(Item $item, User $buyer): void
     {
-        if ($item->seller_id === $buyer->user_id) {
-            throw new RuntimeException('You cannot buy your own item.');
-        }
+        // No self-buy rule: a published item belongs to the store, and the
+        // student who consigned it is as entitled to buy it back as anyone.
 
         if (!$item->isPurchasable()) {
             throw new RuntimeException('This item is not available for purchase.');

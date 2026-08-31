@@ -152,8 +152,10 @@ class CheckoutTest extends MarketplaceTestCase
     }
 
     #[Test]
-    public function a_buyer_cannot_purchase_their_own_item(): void
+    public function the_original_seller_may_buy_their_published_item_back(): void
     {
+        // Once published, the item belongs to the store - the student who
+        // consigned it is just another buyer of the store's stock.
         $seller = $this->student(10);
         $item = $this->publishedItem('250', '180', $seller);
 
@@ -162,7 +164,8 @@ class CheckoutTest extends MarketplaceTestCase
                 'item_id' => $item->item_id,
                 'payment_method' => 'cash',
             ])
-            ->assertStatus(409);
+            ->assertStatus(201)
+            ->assertJsonPath('data.amount_due', '250.00');
     }
 
     #[Test]

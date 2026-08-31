@@ -51,10 +51,6 @@ class CheckoutController extends Controller
             return response()->json(['message' => 'Item not found'], 404);
         }
 
-        if ($item->seller_id === $buyer->user_id) {
-            return response()->json(['message' => 'You cannot buy your own item.'], 403);
-        }
-
         if (!$item->isPurchasable()) {
             return response()->json(['message' => 'This item is not available for purchase.'], 409);
         }
