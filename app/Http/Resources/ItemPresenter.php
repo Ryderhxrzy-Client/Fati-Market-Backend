@@ -3,6 +3,7 @@
 namespace App\Http\Resources;
 
 use App\Models\Item;
+use App\Support\ItemQr;
 use App\Support\LoyaltyRules;
 
 /**
@@ -59,14 +60,20 @@ class ItemPresenter
             'rejected_reason' => $item->rejected_reason,
             'meetup_schedule' => $item->meetup_schedule,
 
+            // Whether Admin has agreed a price - the moment the offer counts
+            // as accepted and the turnover QR below starts existing.
+            'offer_accepted' => $item->acquisition_price !== null,
+            'qr_code' => self::turnoverCode($item),
+
             // Legacy key, still the seller's own asking figure.
             'price_points' => $item->price_points,
         ]);
 
         // Deliberately withheld from the seller: reward_points, public_price
-        // and markup are buyer-facing and Admin-facing figures. A pending
-        // listing in particular must show no points equivalent at all.
-        if (!$item->isPending()) {
+        // and markup are buyer-facing figures. The acquisition price is
+        // different - once Admin sets it, it IS the acceptance, and the
+        // seller is the person it is offered to.
+        if ($item->acquisition_price !== null) {
             $payload['acquisition_price'] = $item->acquisition_price;
         }
 
@@ -97,6 +104,8 @@ class ItemPresenter
             'acquired_at' => $item->acquired_at,
             'acquired_by' => $item->acquired_by,
             'turnover_notes' => $item->turnover_notes,
+            'turnover_photo' => $item->turnover_photo,
+            'seller_payout_photo' => $item->seller_payout_photo,
             'meetup_schedule' => $item->meetup_schedule,
             'published_at' => $item->published_at,
             'published_by' => $item->published_by,
@@ -107,10 +116,25 @@ class ItemPresenter
             'price_source' => $item->price_source,
             'is_legacy_priced' => $item->isLegacyPriced(),
 
+            // The seller's turnover code, valid once the offer is priced.
+            'qr_code' => self::turnoverCode($item),
+
             // Legacy keys, preserved for the current admin app build.
             'price_points' => $item->price_points,
             'markup_points' => $item->markup_points,
         ]);
+    }
+
+    /**
+     * The turnover QR exists only between acceptance and acquisition: before
+     * the price is agreed there is nothing to bring in, and after the item is
+     * in the store the code has done its job.
+     */
+    private static function turnoverCode(Item $item): ?string
+    {
+        $accepted = $item->acquisition_price !== null && $item->isPending();
+
+        return $accepted ? ItemQr::codeFor($item) : null;
     }
 
     /** Fields every audience may see. */
