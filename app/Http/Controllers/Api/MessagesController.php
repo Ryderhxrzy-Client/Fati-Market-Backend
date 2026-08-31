@@ -199,6 +199,10 @@ class MessagesController extends Controller
                         'message' => $msg->message,
                         'kind' => $msg->kind ?? Message::KIND_TEXT,
                         'transaction_id' => $msg->transaction_id,
+                        // The state this line recorded, so a card shows its
+                        // own moment rather than the order's latest.
+                        'payment_status_at' => $msg->payment_status_at,
+                        'order_status_at' => $msg->order_status_at,
                         'order' => $msg->transaction === null ? null : ($isAdmin
                             ? TransactionPresenter::forAdmin($msg->transaction)
                             : TransactionPresenter::forBuyer($msg->transaction)),

@@ -266,4 +266,45 @@ class OrderChatCardTest extends MarketplaceTestCase
         $this->assertArrayNotHasKey('available_actions', $card['order']);
         $this->assertArrayNotHasKey('buyer', $card['order']);
     }
+
+    // ── The thread is a history ──────────────────────────────────────────
+
+    #[Test]
+    public function the_thread_reads_as_a_history_not_a_live_dashboard(): void
+    {
+        [$transaction, $buyer, $item] = $this->openCheckout();
+        $admin = $this->storeAdmin();
+
+        $this->actingAs($buyer)
+            ->postJson("/api/checkout/{$transaction->transaction_id}/payment-proof", [
+                'proof' => UploadedFile::fake()->image('receipt.jpg'),
+            ])->assertOk();
+
+        $this->actingAs($admin)
+            ->postJson("/api/admin/transactions/{$transaction->transaction_id}/verify-payment")
+            ->assertOk();
+
+        $thread = collect(
+            $this->actingAs($buyer)
+                ->getJson("/api/messages/{$item->item_id}?other_user_id={$admin->user_id}")
+                ->assertOk()
+                ->json('data')
+        );
+
+        // Each line keeps the moment it was written, rather than all three
+        // reporting the order's latest state.
+        $placed = $thread->firstWhere('kind', Message::KIND_ORDER_PLACED);
+        $this->assertSame(Transaction::PAYMENT_UNPAID, $placed['payment_status_at']);
+        $this->assertSame(Transaction::STATUS_PENDING_PAYMENT, $placed['order_status_at']);
+
+        $proof = $thread->firstWhere('kind', Message::KIND_PAYMENT_SUBMITTED);
+        $this->assertSame(Transaction::PAYMENT_PROOF_SUBMITTED, $proof['payment_status_at']);
+
+        $update = $thread->firstWhere('kind', Message::KIND_ORDER_UPDATE);
+        $this->assertSame(Transaction::PAYMENT_VERIFIED, $update['payment_status_at']);
+
+        // The order travelling with each card is still the live one - the
+        // amounts and the item never freeze, only the state does.
+        $this->assertSame(Transaction::PAYMENT_VERIFIED, $placed['order']['payment_status']);
+    }
 }

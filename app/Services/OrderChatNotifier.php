@@ -278,6 +278,11 @@ class OrderChatNotifier
                 'message' => $text,
                 'kind' => $kind,
                 'transaction_id' => $transaction?->transaction_id,
+                // What was true when this line was written. Every notifier
+                // posts after the state change it describes, so this is the
+                // event's own state - and it never moves again.
+                'payment_status_at' => $transaction?->payment_status,
+                'order_status_at' => $transaction?->status,
                 'sent_at' => now(),
             ]);
         } catch (\Throwable $e) {

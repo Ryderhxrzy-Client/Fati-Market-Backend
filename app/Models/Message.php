@@ -52,6 +52,8 @@ class Message extends Model
         'message',
         'kind',
         'transaction_id',
+        'payment_status_at',
+        'order_status_at',
         'sent_at',
         'is_read',
     ];
