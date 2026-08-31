@@ -201,4 +201,27 @@ class SellerTurnoverTest extends MarketplaceTestCase
             ])->assertOk();
         $this->assertNull($item->fresh()->meetup_reminders_sent);
     }
+
+    #[Test]
+    public function a_seller_still_sees_the_price_once_their_item_is_reserved(): void
+    {
+        // A reserved item takes the seller off the "purchasable" path and on
+        // to their own view - which used to omit the public price entirely,
+        // blanking it in the chat header and on View Item.
+        $item = $this->publishedItem('250', '180');
+        $seller = User::where('user_id', $item->seller_id)->firstOrFail();
+
+        $item->update(['status' => Item::STATUS_RESERVED]);
+
+        $data = $this->actingAs($seller)
+            ->getJson("/api/items/{$item->item_id}")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertSame('250.00', $data['public_price']);
+        $this->assertSame('180.00', $data['acquisition_price']);
+
+        // The store's profit stays the store's business.
+        $this->assertArrayNotHasKey('markup', $data);
+    }
 }

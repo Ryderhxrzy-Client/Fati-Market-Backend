@@ -69,12 +69,18 @@ class ItemPresenter
             'price_points' => $item->price_points,
         ]);
 
-        // Deliberately withheld from the seller: reward_points, public_price
-        // and markup are buyer-facing figures. The acquisition price is
-        // different - once Admin sets it, it IS the acceptance, and the
-        // seller is the person it is offered to.
+        // Withheld from the seller: reward_points and markup are buyer-side
+        // and store-side figures respectively. Two are not secrets, though:
+        // the acquisition price IS the acceptance offered to this seller, and
+        // once the item is listed its public price is on the catalog for
+        // anyone to read - hiding it only blanked the price on the seller's
+        // own screens the moment their item was reserved.
         if ($item->acquisition_price !== null) {
             $payload['acquisition_price'] = $item->acquisition_price;
+        }
+
+        if ($item->public_price !== null) {
+            $payload['public_price'] = $item->publicPrice()?->toDecimalString();
         }
 
         return $payload;
