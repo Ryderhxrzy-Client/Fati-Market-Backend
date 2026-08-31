@@ -142,6 +142,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/trade', [TransactionController::class, 'getTradeTransactions']);
             Route::get('/profit-summary', [TransactionController::class, 'getProfitSummary']);
             Route::post('/expire-abandoned', [TransactionController::class, 'expireAbandoned']);
+            // The literal segment must precede the wildcard below.
+            Route::get('/scan', [TransactionController::class, 'scan']);
 
             Route::get('/{transaction_id}', [TransactionController::class, 'getTransaction']);
             Route::post('/{transaction_id}/verify-payment', [TransactionController::class, 'verifyPayment']);
