@@ -21,10 +21,23 @@ class TransactionPresenter
     {
         return array_merge(self::common($transaction), [
             'buyer' => self::buyerProfile($transaction),
+            // Who sold this. On a buyer order that is the store - it bought
+            // the item from the student and owns what it sells - so the
+            // student is recorded as provenance, not as the counterparty.
+            // Listing them as "seller" made a buy-back read as a student
+            // selling to themselves.
             'seller' => [
                 'user_id' => $transaction->seller_id,
                 'email' => $transaction->relationLoaded('seller') ? $transaction->seller?->email : null,
+                'name' => $transaction->is_seller_payout
+                    ? ($transaction->relationLoaded('seller') ? $transaction->seller?->email : null)
+                    : 'Ofelia Store',
+                'is_store' => !$transaction->is_seller_payout,
             ],
+            // The student the item originally came from, on a buyer order.
+            'consigned_by' => $transaction->is_seller_payout
+                ? null
+                : ($transaction->relationLoaded('seller') ? $transaction->seller?->email : null),
             'payment_proof' => $transaction->payment_proof,
             'payment_reference' => $transaction->payment_reference,
             'payment_proof_submitted_at' => $transaction->payment_proof_submitted_at,

@@ -371,4 +371,48 @@ class TransactionLifecycleTest extends MarketplaceTestCase
             Point::where('user_id', $buyer->user_id)->orderByDesc('point_id')->first()->balance_after,
         );
     }
+
+    #[Test]
+    public function the_store_is_the_seller_on_a_buyer_order(): void
+    {
+        // The store buys the item from the student and then sells it, so the
+        // student is provenance - not the counterparty. Listing them as the
+        // seller made a buy-back read as a student selling to themselves.
+        [$transaction, $buyer, $item] = $this->openCheckout('250', 0, 0, 'cash');
+        $admin = $this->admin();
+
+        $row = collect(
+            $this->actingAs($admin)->getJson('/api/admin/transactions')->assertOk()->json('data')
+        )->firstWhere('transaction_id', $transaction->transaction_id);
+
+        $this->assertSame('Ofelia Store', $row['seller']['name']);
+        $this->assertTrue($row['seller']['is_store']);
+        $this->assertNotSame($row['buyer']['email'], $row['seller']['name']);
+
+        // The student the item came from is still recorded, separately.
+        $consignor = User::where('user_id', $item->seller_id)->firstOrFail();
+        $this->assertSame($consignor->email, $row['consigned_by']);
+    }
+
+    #[Test]
+    public function a_buy_back_still_names_the_store_as_the_seller(): void
+    {
+        // The seller may buy their own published item back now, which is the
+        // case that exposed the bug: both columns showed the same person.
+        $item = $this->publishedItem('250', '180');
+        $seller = User::where('user_id', $item->seller_id)->firstOrFail();
+
+        $id = $this->actingAs($seller)->postJson('/api/checkout', [
+            'item_id' => $item->item_id,
+            'points_used' => 0,
+            'payment_method' => 'cash',
+        ])->assertStatus(201)->json('data.transaction_id');
+
+        $row = collect(
+            $this->actingAs($this->admin())->getJson('/api/admin/transactions')->json('data')
+        )->firstWhere('transaction_id', $id);
+
+        $this->assertSame($seller->email, $row['buyer']['email']);
+        $this->assertSame('Ofelia Store', $row['seller']['name']);
+    }
 }
