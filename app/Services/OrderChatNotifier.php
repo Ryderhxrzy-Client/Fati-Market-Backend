@@ -147,6 +147,80 @@ class OrderChatNotifier
         );
     }
 
+    /**
+     * A seller has just listed an item.
+     *
+     * Opens the item's conversation on the seller's behalf so the offer is
+     * already sitting in front of Admin - card, photo, asking price - and
+     * pushes it to Admin's phone like any other chat message, so tapping the
+     * notification lands in this exact thread.
+     */
+    public function itemListed(Item $item, User $seller): void
+    {
+        $admin = $this->admin();
+
+        if ($admin === null) {
+            Log::warning('No admin account to notify about a new listing', [
+                'item_id' => $item->item_id,
+            ]);
+
+            return;
+        }
+
+        $lines = [
+            "Hi! I'd like to sell \"{$item->title}\".",
+            'Asking price: ₱' . $item->askingPrice()->toFormattedString(),
+            'Waiting for the store to review my offer.',
+        ];
+
+        $message = $this->post(
+            $item,
+            $seller,
+            $admin,
+            implode("\n", $lines),
+            Message::KIND_ITEM_LISTED,
+        );
+
+        if ($message !== null) {
+            try {
+                $this->fcm->sendChatMessage($message);
+            } catch (\Throwable $e) {
+                Log::error('Failed to push a new-listing notification', [
+                    'item_id' => $item->item_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
+     * Something happened to a listing - accepted, declined, scheduled.
+     *
+     * Posted from Admin into the seller's thread for that item, and pushed to
+     * the seller's phone, so a decision made on either the app or the website
+     * reads the same everywhere.
+     */
+    public function itemUpdate(Item $item, string $text, string $pushTitle): void
+    {
+        $admin = $this->admin();
+        $seller = User::where('user_id', $item->seller_id)->first();
+
+        if ($admin === null || $seller === null) {
+            return;
+        }
+
+        $this->post($item, $admin, $seller, $text);
+
+        try {
+            $this->fcm->sendItemNotification($item, $seller, 'item_update', $pushTitle, $text);
+        } catch (\Throwable $e) {
+            Log::error('Failed to push an item update', [
+                'item_id' => $item->item_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /** How the buyer is paying, worded to sit inside a sentence. */
     public static function paymentMethodLabel(Transaction $transaction): string
     {
@@ -195,9 +269,9 @@ class OrderChatNotifier
         string $text,
         string $kind = Message::KIND_TEXT,
         ?Transaction $transaction = null,
-    ): void {
+    ): ?Message {
         try {
-            Message::create([
+            return Message::create([
                 'item_id' => $item->item_id,
                 'sender_id' => $sender->user_id,
                 'receiver_id' => $receiver->user_id,
@@ -211,6 +285,8 @@ class OrderChatNotifier
                 'item_id' => $item->item_id,
                 'error' => $e->getMessage(),
             ]);
+
+            return null;
         }
     }
 }
