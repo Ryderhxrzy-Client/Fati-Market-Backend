@@ -9,7 +9,9 @@ use App\Models\Point;
 use App\Models\Transaction;
 use App\Models\User;
 use App\Services\CheckoutService;
+use App\Services\PhotoUploader;
 use App\Services\PointsLedger;
+use App\Support\OrderQr;
 use App\Support\LoyaltyRules;
 use App\Support\Money;
 use Illuminate\Http\Request;
@@ -30,6 +32,7 @@ class TransactionController extends Controller
     public function __construct(
         private readonly CheckoutService $checkout,
         private readonly PointsLedger $ledger,
+        private readonly PhotoUploader $uploader,
     ) {
     }
 
@@ -332,6 +335,33 @@ class TransactionController extends Controller
         return $this->withTransaction($transactionId, function (Transaction $transaction) use ($request) {
             $alreadyCompleted = $transaction->status === Transaction::STATUS_COMPLETED;
 
+            // The walk-in flow photographs the buyer receiving the item. The
+            // photo is optional at the API - the conversation's Complete
+            // button has no camera - but when one is sent it must be a real
+            // image and the order must actually be completable, so a refused
+            // completion does not leave a stray "proof" on an open order.
+            if ($request->hasFile('handover_photo')) {
+                if ($transaction->payment_status !== Transaction::PAYMENT_VERIFIED && !$alreadyCompleted) {
+                    return response()->json([
+                        'message' => 'Payment must be verified before completing the order.',
+                    ], 409);
+                }
+
+                $file = $request->file('handover_photo');
+
+                if ($error = $this->uploader->validateImages([$file])) {
+                    return response()->json($error, 422);
+                }
+
+                $url = $this->uploader->upload($file, 'handover_photos');
+
+                if ($url === null) {
+                    return response()->json(['message' => 'Failed to upload the handover photo.'], 500);
+                }
+
+                $transaction->update(['handover_photo' => $url]);
+            }
+
             $transaction = $this->checkout->complete($transaction, $request->user());
             $buyer = User::where('user_id', $transaction->buyer_id)->first();
 
@@ -342,6 +372,34 @@ class TransactionController extends Controller
                 'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
                 'buyer_wallet_points' => $buyer?->wallet_points,
                 'reward_points_credited' => $alreadyCompleted ? 0 : $transaction->reward_points_earned,
+            ], 200);
+        });
+    }
+
+    /**
+     * Resolve a scanned order QR to the order itself.
+     * GET /api/admin/transactions/scan?code=FMQR1.12.abcdef
+     *
+     * The signature inside the code is checked before anything is looked up,
+     * so a hand-typed or tampered code answers 404 rather than leaking whether
+     * an order number exists.
+     */
+    public function scan(Request $request)
+    {
+        $request->validate(['code' => ['required', 'string', 'max:64']]);
+
+        $transactionId = OrderQr::transactionIdFrom($request->query('code'));
+
+        if ($transactionId === null) {
+            return response()->json(['message' => 'This is not a Fati Market order code.'], 404);
+        }
+
+        return $this->withTransaction($transactionId, function (Transaction $transaction) {
+            return response()->json([
+                'message' => 'Order found',
+                'data' => TransactionPresenter::forAdmin(
+                    $transaction->load(['item.photos', 'buyer.studentInfo', 'seller']),
+                ),
             ], 200);
         });
     }
@@ -771,9 +829,12 @@ class TransactionController extends Controller
     /** GET /api/admin/transactions/cash */
     public function getCashTransactions(Request $request)
     {
+        // Cash means cash handed over at the store. GCash has its own trail
+        // (reference number and receipt) and its own reconciliation, so mixing
+        // the two here made this list useless for counting the drawer.
         $transactions = Transaction::with(['item', 'buyer', 'seller'])
             ->buyerOrders()
-            ->whereIn('payment_method', [Transaction::METHOD_CASH, Transaction::METHOD_GCASH])
+            ->where('payment_method', Transaction::METHOD_CASH)
             ->orderBy('transaction_date', 'desc')
             ->get()
             ->map(fn (Transaction $t) => TransactionPresenter::forAdmin($t));
