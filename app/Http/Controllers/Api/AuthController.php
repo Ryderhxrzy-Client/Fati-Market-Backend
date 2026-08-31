@@ -198,8 +198,12 @@ class AuthController extends Controller
             // Get student information
             $studentInfo = StudentInformation::where('user_id', $user->user_id)->first();
 
-            // Generate Sanctum token
-            $token = $user->createToken('auth_token')->plainTextToken;
+            // Generate Sanctum token. Its life is config('sanctum.expiration')
+            // minutes, and the same window is stamped on the row so the token
+            // carries its own deadline for pruning and for the client.
+            $lifetimeMinutes = (int) config('sanctum.expiration');
+            $expiresAt = $lifetimeMinutes > 0 ? now()->addMinutes($lifetimeMinutes) : null;
+            $token = $user->createToken('auth_token', ['*'], $expiresAt)->plainTextToken;
 
             return response()->json([
                 'message' => 'Login successful',
@@ -212,6 +216,10 @@ class AuthController extends Controller
                     'role' => $user->role,
                     'wallet_points' => $user->wallet_points,
                     'token' => $token,
+                    'expires_at' => $expiresAt?->toIso8601String(),
+                    // Seconds, so a client can age the session off its own
+                    // clock instead of trusting the two to be in sync.
+                    'expires_in' => $expiresAt ? $lifetimeMinutes * 60 : null,
                 ]
             ], 200);
 
