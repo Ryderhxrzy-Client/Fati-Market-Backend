@@ -224,4 +224,45 @@ class SellerTurnoverTest extends MarketplaceTestCase
         // The store's profit stays the store's business.
         $this->assertArrayNotHasKey('markup', $data);
     }
+
+    #[Test]
+    public function a_seller_keeps_their_agreed_price_once_the_item_is_public(): void
+    {
+        // A published item is purchasable, so its own seller is handed the
+        // buyer view - which carries no acquisition price. The chat header
+        // then fell back to the asking price the student typed weeks ago.
+        $item = $this->publishedItem('600', '400');
+        $seller = User::where('user_id', $item->seller_id)->firstOrFail();
+
+        $data = $this->actingAs($seller)
+            ->getJson("/api/items/{$item->item_id}")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertSame('400.00', $data['acquisition_price']);
+        $this->assertSame('600.00', $data['public_price']);
+        $this->assertTrue($data['offer_accepted']);
+
+        // And the same figures survive the listing endpoint.
+        $row = collect($this->actingAs($seller)->getJson('/api/items')->json('data'))
+            ->firstWhere('item_id', $item->item_id);
+
+        $this->assertSame('400.00', $row['acquisition_price']);
+    }
+
+    #[Test]
+    public function a_buyer_never_sees_what_the_store_paid(): void
+    {
+        $item = $this->publishedItem('600', '400');
+        $buyer = $this->student();
+
+        $data = $this->actingAs($buyer)
+            ->getJson("/api/items/{$item->item_id}")
+            ->assertOk()
+            ->json('data');
+
+        $this->assertSame('600.00', $data['public_price']);
+        $this->assertArrayNotHasKey('acquisition_price', $data);
+        $this->assertArrayNotHasKey('markup', $data);
+    }
 }

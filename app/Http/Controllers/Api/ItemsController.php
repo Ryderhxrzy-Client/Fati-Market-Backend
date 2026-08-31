@@ -217,9 +217,15 @@ class ItemsController extends Controller
                 // A seller looking at their own unpublished listing sees their
                 // asking price and no reward figure; everyone else sees the
                 // catalog view.
-                return $isOwner && !$item->isPurchasable()
+                $payload = $isOwner && !$item->isPurchasable()
                     ? ItemPresenter::forSeller($item)
                     : ItemPresenter::forBuyer($item);
+
+                // Either way, a seller keeps their own figures - the agreed
+                // price above all, which the catalog view does not carry.
+                return $isOwner
+                    ? array_merge($payload, ItemPresenter::sellerExtras($item))
+                    : $payload;
             });
 
             return response()->json([
@@ -272,6 +278,11 @@ class ItemsController extends Controller
                 }
 
                 $payload = ItemPresenter::forBuyer($item);
+            }
+
+            // The seller's own figures survive every status change.
+            if ($user !== null && $item->seller_id === $user->user_id) {
+                $payload = array_merge($payload, ItemPresenter::sellerExtras($item));
             }
 
             // A reserved item reads very differently depending on who is

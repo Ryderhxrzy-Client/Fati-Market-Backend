@@ -132,6 +132,31 @@ class ItemPresenter
     }
 
     /**
+     * What a seller may always see about their own listing.
+     *
+     * Which presenter a request lands on depends on the item's status - a
+     * published item is purchasable, so its own seller is handed the buyer
+     * view. That view has no acquisition price, which left the seller's chat
+     * header falling back to the asking price they typed weeks ago. These
+     * fields are merged in whenever the requester IS the seller, so their own
+     * numbers never disappear behind a status change.
+     */
+    public static function sellerExtras(Item $item): array
+    {
+        return [
+            'seller_asking_price' => $item->askingPrice()->toDecimalString(),
+            'acquisition_price' => $item->acquisition_price,
+            'offer_accepted' => $item->acquisition_price !== null,
+            'qr_code' => self::turnoverCode($item),
+            'meetup_schedule' => $item->meetup_schedule,
+            'seller_payout_status' => $item->seller_payout_status,
+            'seller_payout_amount' => $item->seller_payout_amount,
+            'acquired_at' => $item->acquired_at,
+            'rejected_reason' => $item->rejected_reason,
+        ];
+    }
+
+    /**
      * The turnover QR exists only between acceptance and acquisition: before
      * the price is agreed there is nothing to bring in, and after the item is
      * in the store the code has done its job.
