@@ -31,6 +31,13 @@ class Message extends Model
     public const KIND_PAYMENT_SUBMITTED = 'payment_submitted';
     public const KIND_ORDER_UPDATE = 'order_update';
 
+    /**
+     * A seller just listed an item. Drawn as an offer card - the item, its
+     * photo and asking price - with the review actions on Admin's side.
+     * Carries no transaction; the message's own item_id is the subject.
+     */
+    public const KIND_ITEM_LISTED = 'item_listed';
+
     /** Kinds the apps render as a card rather than a chat bubble. */
     public const ORDER_KINDS = [
         self::KIND_ORDER_PLACED,
