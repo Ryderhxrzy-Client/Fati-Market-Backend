@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Transaction;
 use App\Support\LoyaltyRules;
+use App\Support\OrderQr;
 
 /**
  * The order payload shared by the buyer's order list and the Admin
@@ -126,6 +127,12 @@ class TransactionPresenter
             'is_full_points_checkout' => $transaction->isFullPointsCheckout(),
             'transaction_date' => $transaction->transaction_date,
             'created_at' => $transaction->created_at,
+
+            // The walk-in pickup code. The buyer renders it as a QR; Admin
+            // scans it and lands on this order.
+            'qr_code' => OrderQr::codeFor($transaction),
+            // Proof the item was physically handed over, set on completion.
+            'handover_photo' => $transaction->handover_photo,
         ];
     }
 
