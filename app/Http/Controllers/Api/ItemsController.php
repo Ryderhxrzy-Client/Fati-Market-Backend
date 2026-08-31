@@ -274,6 +274,15 @@ class ItemsController extends Controller
                 $payload = ItemPresenter::forBuyer($item);
             }
 
+            // A reserved item reads very differently depending on who is
+            // looking: "someone is checking this out" to a stranger, "you
+            // reserved this" to the buyer holding it.
+            $payload['reserved_by_me'] = $user !== null
+                && \App\Models\Transaction::where('item_id', $item->item_id)
+                    ->where('buyer_id', $user->user_id)
+                    ->whereIn('status', \App\Models\Transaction::OPEN_STATUSES)
+                    ->exists();
+
             return response()->json([
                 'message' => 'Item details retrieved successfully',
                 'data' => $payload,
