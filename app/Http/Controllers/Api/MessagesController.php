@@ -248,7 +248,9 @@ class MessagesController extends Controller
                         $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
                     },
                     'item' => function ($query) {
-                        $query->select('item_id', 'title', 'status');
+                        // acquisition_price rides along so the list can say
+                        // "Offer accepted" without a per-item lookup.
+                        $query->select('item_id', 'title', 'status', 'acquisition_price', 'seller_id');
                     },
                     'item.photos' => function ($query) {
                         $query->select('item_id', 'photo_url');
@@ -279,6 +281,8 @@ class MessagesController extends Controller
                         'item_id' => $latestMessage->item_id,
                         'item_title' => $latestMessage->item?->title,
                         'item_status' => $latestMessage->item?->status,
+                        'item_offer_accepted' => $latestMessage->item?->acquisition_price !== null,
+                        'item_seller_id' => $latestMessage->item?->seller_id,
                         'item_photo' => $latestMessage->item?->photos->first()?->photo_url,
                         'latest_message' => $latestMessage->message,
                         'last_message_at' => $latestMessage->sent_at,
