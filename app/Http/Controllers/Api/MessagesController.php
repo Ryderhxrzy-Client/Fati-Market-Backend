@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\ItemPresenter;
 use App\Http\Resources\TransactionPresenter;
+use App\Models\Item;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\FcmService;
@@ -158,9 +160,28 @@ class MessagesController extends Controller
             // orders screen are the same thing. The buyer sees their own view.
             $isAdmin = $request->user()->role === User::ROLE_ADMIN;
 
-            $messages = $messageQuery->orderBy('sent_at', 'asc')
-                ->get()
-                ->map(function ($msg) use ($isAdmin) {
+            $rows = $messageQuery->orderBy('sent_at', 'asc')->get();
+
+            // The listing card behind an "item_listed" message. Conversations
+            // are scoped per item, so one lookup serves the whole thread.
+            // Admin gets the admin view (with the review prices); the seller
+            // gets their own; anyone else gets no card.
+            $itemCard = null;
+
+            if ($rows->contains(fn ($m) => ($m->kind ?? '') === Message::KIND_ITEM_LISTED)) {
+                $listedItem = Item::with(['photos', 'seller'])->find($itemId);
+
+                if ($listedItem !== null) {
+                    $itemCard = match (true) {
+                        $isAdmin => ItemPresenter::forAdmin($listedItem),
+                        $listedItem->seller_id === $userId => ItemPresenter::forSeller($listedItem),
+                        default => null,
+                    };
+                }
+            }
+
+            $messages = $rows
+                ->map(function ($msg) use ($isAdmin, $itemCard) {
                     return [
                         'message_id' => $msg->message_id,
                         'item_id' => $msg->item_id,
@@ -181,6 +202,7 @@ class MessagesController extends Controller
                         'order' => $msg->transaction === null ? null : ($isAdmin
                             ? TransactionPresenter::forAdmin($msg->transaction)
                             : TransactionPresenter::forBuyer($msg->transaction)),
+                        'item_card' => $msg->kind === Message::KIND_ITEM_LISTED ? $itemCard : null,
                         'sent_at' => $msg->sent_at,
                     ];
                 });
