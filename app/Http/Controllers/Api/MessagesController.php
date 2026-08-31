@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\TransactionPresenter;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\FcmService;
@@ -64,6 +65,9 @@ class MessagesController extends Controller
                     'sender_id' => $newMessage->sender_id,
                     'receiver_id' => $newMessage->receiver_id,
                     'message' => $newMessage->message,
+                    'kind' => $newMessage->kind ?? Message::KIND_TEXT,
+                    'transaction_id' => null,
+                    'order' => null,
                     'sent_at' => $newMessage->sent_at,
                 ]
             ], 201);
@@ -127,7 +131,11 @@ class MessagesController extends Controller
                 },
                 'item.photos' => function ($query) {
                     $query->select('item_id', 'photo_url');
-                }
+                },
+                // An order message is rendered as a card, which needs the
+                // order itself - its live payment status included.
+                'transaction.item.photos',
+                'transaction.buyer.studentInfo',
             ])->where('item_id', $itemId);
 
             if ($otherUserId) {
@@ -145,9 +153,14 @@ class MessagesController extends Controller
                 });
             }
 
+            // Admin sees the order the way the transaction screen shows it,
+            // actions included, so approving in chat and approving on the
+            // orders screen are the same thing. The buyer sees their own view.
+            $isAdmin = $request->user()->role === User::ROLE_ADMIN;
+
             $messages = $messageQuery->orderBy('sent_at', 'asc')
                 ->get()
-                ->map(function ($msg) {
+                ->map(function ($msg) use ($isAdmin) {
                     return [
                         'message_id' => $msg->message_id,
                         'item_id' => $msg->item_id,
@@ -163,6 +176,11 @@ class MessagesController extends Controller
                         'receiver_name' => $msg->receiver->studentInfo?->first_name . ' ' . $msg->receiver->studentInfo?->last_name,
                         'receiver_profile_picture' => $msg->receiver->studentInfo?->profile_picture,
                         'message' => $msg->message,
+                        'kind' => $msg->kind ?? Message::KIND_TEXT,
+                        'transaction_id' => $msg->transaction_id,
+                        'order' => $msg->transaction === null ? null : ($isAdmin
+                            ? TransactionPresenter::forAdmin($msg->transaction)
+                            : TransactionPresenter::forBuyer($msg->transaction)),
                         'sent_at' => $msg->sent_at,
                     ];
                 });
