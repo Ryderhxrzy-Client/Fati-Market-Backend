@@ -95,6 +95,7 @@ class Transaction extends Model
         'payment_status',
         'payment_verified_at',
         'payment_verified_by',
+        'handover_photo',
         'pickup_status',
         'reserved_until',
         'status',
