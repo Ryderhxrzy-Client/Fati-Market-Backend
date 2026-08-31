@@ -55,6 +55,57 @@ class FcmService
      * Carries the transaction and item ids so tapping the notification can
      * open the order straight away instead of dumping the user on a list.
      */
+    /**
+     * Push an item event to one user - an offer decision, a schedule, a
+     * meet-up reminder. Same delivery as the order pushes; the type tells the
+     * app which it is.
+     */
+    public function sendItemNotification(
+        \App\Models\Item $item,
+        \App\Models\User $recipient,
+        string $type,
+        string $title,
+        string $body,
+    ): void {
+        $tokens = FcmDeviceToken::where('user_id', $recipient->user_id)->pluck('token')->all();
+
+        if (!$tokens) {
+            return;
+        }
+
+        $data = [
+            'type' => $type,
+            'item_id' => (string) $item->item_id,
+            'item_title' => (string) $item->title,
+            'status' => (string) $item->status,
+            'title' => $title,
+            'body' => $body,
+        ];
+
+        foreach ($tokens as $token) {
+            try {
+                $response = Http::withToken($this->accessToken())
+                    ->post('https://fcm.googleapis.com/v1/projects/' . config('services.fcm.project_id') . '/messages:send', [
+                        'message' => [
+                            'token' => $token,
+                            'data' => $data,
+                            'android' => ['priority' => 'HIGH'],
+                        ],
+                    ]);
+
+                if ($response->status() === 404 || $response->status() === 400) {
+                    FcmDeviceToken::where('token', $token)->delete();
+                }
+
+                if (!$response->successful()) {
+                    Log::warning('FCM item send failed', ['status' => $response->status()]);
+                }
+            } catch (\Throwable $e) {
+                Log::error('FCM item exception', ['error' => $e->getMessage()]);
+            }
+        }
+    }
+
     public function sendOrderNotification(
         \App\Models\Transaction $transaction,
         \App\Models\User $recipient,
