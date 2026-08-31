@@ -122,6 +122,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::prefix('admin/items')->group(function () {
             Route::get('/', [AdminInventoryController::class, 'index']);
             Route::get('/pending', [AdminInventoryController::class, 'pending']);
+            Route::get('/scan', [AdminInventoryController::class, 'scan']);
 
             Route::post('/{item_id}/acquisition-price', [AdminInventoryController::class, 'setAcquisitionPrice']);
             Route::post('/{item_id}/meetup', [AdminInventoryController::class, 'setMeetupSchedule']);

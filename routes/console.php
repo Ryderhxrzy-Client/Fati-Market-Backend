@@ -26,3 +26,12 @@ Schedule::command('checkouts:expire')
  */
 Schedule::command('sanctum:prune-expired --hours=24')
     ->daily();
+
+/*
+ * The 6h / 1h / 30m meet-up reminders for sellers bringing items in. Each
+ * threshold fires once per schedule; a 15-minute cadence keeps even the
+ * 30-minute reminder within a useful window.
+ */
+Schedule::command('meetups:remind')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping();
