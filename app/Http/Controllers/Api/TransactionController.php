@@ -273,7 +273,7 @@ class TransactionController extends Controller
     }
 
     /**
-     * Approve a payment - a verified GCash proof, or cash handed over in store.
+     * Confirm money that has arrived - a GCash transfer whose proof checks out.
      * POST /api/admin/transactions/{transaction_id}/verify-payment
      */
     public function verifyPayment(Request $request, $transactionId)
@@ -283,6 +283,26 @@ class TransactionController extends Controller
 
             return response()->json([
                 'message' => 'Payment verified',
+                'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
+            ], 200);
+        });
+    }
+
+    /**
+     * Approve a pay-at-the-store order without marking it paid.
+     * POST /api/admin/transactions/{transaction_id}/approve-order
+     *
+     * The buyer picked cash, so nothing has been handed over yet. This accepts
+     * that choice, holds the item and releases the pickup code; the money is
+     * settled when the order is completed at the counter.
+     */
+    public function approveOrder(Request $request, $transactionId)
+    {
+        return $this->withTransaction($transactionId, function (Transaction $transaction) use ($request) {
+            $transaction = $this->checkout->approveOrder($transaction, $request->user());
+
+            return response()->json([
+                'message' => 'Order approved. The buyer pays at the counter on pickup.',
                 'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
