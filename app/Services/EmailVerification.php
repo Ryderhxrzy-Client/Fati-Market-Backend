@@ -61,11 +61,31 @@ class EmailVerification
     }
 
     /**
-     * Spend a code. Returns the address it belonged to.
+     * Spend a code and open the account it belongs to.
      *
      * @throws RuntimeException with wording meant for the person typing.
      */
     public function confirm(string $email, string $code): void
+    {
+        $this->confirmAddress($email, $code);
+
+        User::where('email', strtolower(trim($email)))->update([
+            'email_verified_at' => now(),
+            // Verified is all it takes now: no queue, no approval.
+            'is_active' => true,
+        ]);
+    }
+
+    /**
+     * Spend a code, and nothing more.
+     *
+     * Proving an address is not the same act as opening an account: a personal
+     * address is proven by the same code but must not touch who is allowed to
+     * sign in, or linking one would quietly verify an account that never was.
+     *
+     * @throws RuntimeException with wording meant for the person typing.
+     */
+    public function confirmAddress(string $email, string $code): void
     {
         $email = strtolower(trim($email));
         $row = DB::table(self::TABLE)->where('email', $email)->first();
@@ -93,12 +113,6 @@ class EmailVerification
         }
 
         DB::table(self::TABLE)->where('email', $email)->delete();
-
-        User::where('email', $email)->update([
-            'email_verified_at' => now(),
-            // Verified is all it takes now: no queue, no approval.
-            'is_active' => true,
-        ]);
     }
 
     /**
