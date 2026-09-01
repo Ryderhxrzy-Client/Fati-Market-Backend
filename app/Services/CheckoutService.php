@@ -195,7 +195,13 @@ class CheckoutService
         return $fresh;
     }
 
-    /** Admin accepts the payment. The item stays held for the buyer. */
+    /**
+     * Admin accepts the payment. The item stays held for the buyer.
+     *
+     * This is money that has actually arrived - a GCash transfer whose receipt
+     * Admin has just read. Cash owed at the counter is not this: see
+     * [approveOrder].
+     */
     public function verifyPayment(Transaction $transaction, User $admin): Transaction
     {
         if ($transaction->isTerminal()) {
@@ -211,6 +217,48 @@ class CheckoutService
 
         $fresh = $transaction->fresh();
         $this->announce($fresh, '✅ Your payment has been verified. The item is reserved for you.');
+
+        return $fresh;
+    }
+
+    /**
+     * Admin approves a pay-at-the-store order.
+     *
+     * Approving a cash order accepts the payment method the buyer chose and
+     * holds the item for them. It does NOT mean the money arrived - nobody has
+     * handed over anything yet. Marking such an order paid put "verified" on a
+     * bill nobody had settled, and the buyer's receipt then said so.
+     *
+     * The cash is settled where it is actually taken: at the counter, by
+     * [complete]. What this approval gives the buyer is the reservation and
+     * their pickup code.
+     */
+    public function approveOrder(Transaction $transaction, User $admin): Transaction
+    {
+        if ($transaction->isTerminal()) {
+            throw new RuntimeException('This order is already closed.');
+        }
+
+        if ($transaction->payment_method === Transaction::METHOD_GCASH) {
+            throw new RuntimeException(
+                'A GCash order is approved by verifying its payment proof, not by this action.'
+            );
+        }
+
+        if ($transaction->payment_status === Transaction::PAYMENT_VERIFIED) {
+            throw new RuntimeException('This order is settled already.');
+        }
+
+        $transaction->update(['status' => Transaction::STATUS_RESERVED]);
+
+        $fresh = $transaction->fresh();
+
+        $this->announce(
+            $fresh,
+            '✅ Your order is approved and the item is reserved for you. Show your pickup code at '
+                . 'the store and pay ₱' . $fresh->amountDueMoney()->toFormattedString()
+                . ' in cash when you collect it.'
+        );
 
         return $fresh;
     }
@@ -295,7 +343,19 @@ class CheckoutService
             }
 
             if ($locked->payment_status !== Transaction::PAYMENT_VERIFIED) {
-                throw new RuntimeException('Payment must be verified before completing the order.');
+                // Cash is paid at the counter, and this is that counter: an
+                // admin completing a cash order is saying the money was handed
+                // over. GCash has to land before the item does, so it still has
+                // to be verified from its proof first.
+                if ($locked->payment_method !== Transaction::METHOD_CASH) {
+                    throw new RuntimeException('Payment must be verified before completing the order.');
+                }
+
+                $locked->update([
+                    'payment_status' => Transaction::PAYMENT_VERIFIED,
+                    'payment_verified_at' => now(),
+                    'payment_verified_by' => $admin->user_id,
+                ]);
             }
 
             $buyer = User::where('user_id', $locked->buyer_id)->firstOrFail();
