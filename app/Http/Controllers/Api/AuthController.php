@@ -182,6 +182,11 @@ class AuthController extends Controller
             'expires_in' => $lifetimeMinutes > 0 ? $lifetimeMinutes * 60 : 0,
             'user_id' => $user->user_id,
             'email' => $user->email,
+            // Null until the student links one. The app prompts for it
+            // on the dashboard while it is missing.
+            'personal_email' => $user->personal_email_verified_at === null
+                ? null
+                : $user->personal_email,
             'role' => $user->role,
             'first_name' => $info?->first_name,
             'last_name' => $info?->last_name,
@@ -190,16 +195,32 @@ class AuthController extends Controller
         ];
     }
 
+    /**
+     * Sign in with a password.
+     *
+     * The school domain is deliberately NOT required here any more. A student
+     * signs in with Google while they are enrolled; this field is for the
+     * linked personal address, which is by definition on some other domain, and
+     * for the admin account. Requiring the domain would refuse exactly the
+     * people this route exists for.
+     */
     public function login(Request $request)
     {
         $validated = $request->validate([
-            'email' => ['required', 'email', 'ends_with:@student.fatima.edu.ph'],
+            'email' => ['required', 'email'],
             'password' => ['required', 'string'],
         ]);
 
         try {
-            // Find user by email
-            $user = User::where('email', $validated['email'])->first();
+            $address = strtolower(trim($validated['email']));
+
+            // Either address opens the account - but a personal one only once
+            // it has been proven, or an unverified guess at someone else's
+            // recovery address would be a way in.
+            $user = User::where('email', $address)
+                ->orWhere(fn ($q) => $q->where('personal_email', $address)
+                    ->whereNotNull('personal_email_verified_at'))
+                ->first();
 
             // Check if user exists
             if (!$user) {
@@ -244,6 +265,11 @@ class AuthController extends Controller
                 'data' => [
                     'user_id' => $user->user_id,
                     'email' => $user->email,
+                    // Null until the student links one; the app prompts for it
+                    // on the dashboard while it is missing.
+                    'personal_email' => $user->personal_email_verified_at === null
+                        ? null
+                        : $user->personal_email,
                     'first_name' => $studentInfo?->first_name,
                     'last_name' => $studentInfo?->last_name,
                     'profile_picture' => $studentInfo?->profile_picture,
