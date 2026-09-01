@@ -194,6 +194,59 @@ class OrderChatNotifier
     }
 
     /**
+     * The store has received the item and settled with the seller.
+     *
+     * Nothing was posted here before: a seller handed their item over at the
+     * counter, was photographed being paid, and their conversation simply went
+     * quiet. This closes the thread the listing opened, and carries the
+     * counter's two photographs so the proof lives where the seller can find
+     * it rather than only in Admin's records.
+     */
+    public function itemAcquired(Item $item, User $admin): void
+    {
+        $seller = User::where('user_id', $item->seller_id)->first();
+
+        if ($seller === null) {
+            Log::warning('No seller to notify about an acquired item', [
+                'item_id' => $item->item_id,
+            ]);
+
+            return;
+        }
+
+        $lines = ['✅ "' . $item->title . '" has been received at the store.'];
+
+        if ($item->seller_payout_amount !== null) {
+            $payout = '₱' . Money::fromPesos($item->seller_payout_amount)->toFormattedString();
+
+            $lines[] = $item->seller_payout_status === Item::PAYOUT_PAID
+                ? "You were paid {$payout} in cash."
+                : "Your payout of {$payout} is recorded and settled at the counter.";
+        }
+
+        $lines[] = 'The photos taken at the handover are attached for your records.';
+
+        $message = $this->post(
+            $item,
+            $admin,
+            $seller,
+            implode("\n", $lines),
+            Message::KIND_ITEM_ACQUIRED,
+        );
+
+        if ($message !== null) {
+            try {
+                $this->fcm->sendChatMessage($message);
+            } catch (\Throwable $e) {
+                Log::error('Failed to push an item-acquired notification', [
+                    'item_id' => $item->item_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+    }
+
+    /**
      * Something happened to a listing - accepted, declined, scheduled.
      *
      * Posted from Admin into the seller's thread for that item, and pushed to
