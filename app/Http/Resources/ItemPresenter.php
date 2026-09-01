@@ -56,7 +56,15 @@ class ItemPresenter
             'seller_asking_price_formatted' => '₱' . $asking->toFormattedString(),
             'seller_payout_status' => $item->seller_payout_status,
             'seller_payout_amount' => $item->seller_payout_amount,
+            'seller_paid_at' => $item->seller_paid_at,
             'acquired_at' => $item->acquired_at,
+
+            // The counter's two photographs. The seller was in both of them -
+            // handing the item over and being paid - so this is their proof as
+            // much as it is the store's record.
+            'turnover_photo' => $item->turnover_photo,
+            'seller_payout_photo' => $item->seller_payout_photo,
+
             'rejected_reason' => $item->rejected_reason,
             'meetup_schedule' => $item->meetup_schedule,
 
@@ -151,7 +159,15 @@ class ItemPresenter
             'meetup_schedule' => $item->meetup_schedule,
             'seller_payout_status' => $item->seller_payout_status,
             'seller_payout_amount' => $item->seller_payout_amount,
+            'seller_paid_at' => $item->seller_paid_at,
             'acquired_at' => $item->acquired_at,
+
+            // The counter's two photographs. The seller was in both of them -
+            // handing the item over and being paid - so this is their proof as
+            // much as it is the store's record.
+            'turnover_photo' => $item->turnover_photo,
+            'seller_payout_photo' => $item->seller_payout_photo,
+
             'rejected_reason' => $item->rejected_reason,
         ];
     }
