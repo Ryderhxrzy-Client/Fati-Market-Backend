@@ -415,4 +415,75 @@ class TransactionLifecycleTest extends MarketplaceTestCase
         $this->assertSame($seller->email, $row['buyer']['email']);
         $this->assertSame('Ofelia Store', $row['seller']['name']);
     }
+
+    // ── Cash is approved, not paid ───────────────────────────────────────
+
+    #[Test]
+    public function approving_a_cash_order_holds_it_without_marking_it_paid(): void
+    {
+        [$transaction, $buyer] = $this->openCheckout('250', 0, 0, 'cash');
+
+        // Nothing has been handed over, so verifying is not on offer: the only
+        // approval available accepts the method the buyer chose.
+        $actions = $this->adminRowFor($transaction)['available_actions'];
+        $this->assertContains('approve_order', $actions);
+        $this->assertNotContains('verify_payment', $actions);
+
+        $this->actingAs($this->admin())
+            ->postJson("/api/admin/transactions/{$transaction->transaction_id}/approve-order")
+            ->assertOk()
+            ->assertJsonPath('data.status', Transaction::STATUS_RESERVED)
+            ->assertJsonPath('data.payment_status', Transaction::PAYMENT_UNPAID);
+
+        // And the buyer can collect: an approved order carries its pickup code.
+        $order = collect(
+            $this->actingAs($buyer)->getJson('/api/transactions')->json('data')
+        )->firstWhere('transaction_id', $transaction->transaction_id);
+
+        $this->assertNotEmpty($order['qr_code']);
+    }
+
+    #[Test]
+    public function completing_a_cash_order_is_what_records_the_payment(): void
+    {
+        [$transaction, $buyer, $item] = $this->openCheckout('250', 0, 0, 'cash');
+        $admin = $this->admin();
+
+        $this->actingAs($admin)
+            ->postJson("/api/admin/transactions/{$transaction->transaction_id}/approve-order")
+            ->assertOk();
+
+        $this->assertSame(Transaction::PAYMENT_UNPAID, $transaction->fresh()->payment_status);
+
+        // The buyer turns up, hands over the cash, and the handover settles it.
+        $this->actingAs($admin)
+            ->postJson("/api/admin/transactions/{$transaction->transaction_id}/complete")
+            ->assertOk();
+
+        $fresh = $transaction->fresh();
+        $this->assertSame(Transaction::PAYMENT_VERIFIED, $fresh->payment_status);
+        $this->assertSame(Transaction::STATUS_COMPLETED, $fresh->status);
+        $this->assertSame(Item::STATUS_SOLD, $item->fresh()->status);
+        $this->assertSame(2, $buyer->fresh()->wallet_points);
+    }
+
+    #[Test]
+    public function a_gcash_order_cannot_be_approved_without_verifying_its_proof(): void
+    {
+        [$transaction] = $this->openCheckout('250', 0, 0, 'gcash');
+
+        $this->actingAs($this->admin())
+            ->postJson("/api/admin/transactions/{$transaction->transaction_id}/approve-order")
+            ->assertStatus(409);
+
+        $this->assertSame(Transaction::PAYMENT_UNPAID, $transaction->fresh()->payment_status);
+    }
+
+    /** The admin list row for one order, for asserting on available_actions. */
+    private function adminRowFor(Transaction $transaction): array
+    {
+        return collect(
+            $this->actingAs($this->admin())->getJson('/api/admin/transactions')->json('data')
+        )->firstWhere('transaction_id', $transaction->transaction_id);
+    }
 }
