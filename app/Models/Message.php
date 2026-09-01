@@ -38,6 +38,20 @@ class Message extends Model
      */
     public const KIND_ITEM_LISTED = 'item_listed';
 
+    /**
+     * The store has received the item and paid the seller for it. Drawn as a
+     * card carrying the counter's two photographs - the item in hand and the
+     * cash changing hands - so the seller keeps the proof of both. Carries no
+     * transaction; like a listing, the message's own item_id is the subject.
+     */
+    public const KIND_ITEM_ACQUIRED = 'item_acquired';
+
+    /** Kinds drawn from the item behind the thread rather than an order. */
+    public const ITEM_KINDS = [
+        self::KIND_ITEM_LISTED,
+        self::KIND_ITEM_ACQUIRED,
+    ];
+
     /** Kinds the apps render as a card rather than a chat bubble. */
     public const ORDER_KINDS = [
         self::KIND_ORDER_PLACED,
