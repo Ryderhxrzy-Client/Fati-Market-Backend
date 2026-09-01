@@ -163,6 +163,11 @@ class GoogleAuthController extends Controller
             'token' => $user->createToken('auth_token', ['*'], $expiresAt)->plainTextToken,
             'user_id' => $user->user_id,
             'email' => $user->email,
+            // Null until the student links one. The app prompts for it
+            // on the dashboard while it is missing.
+            'personal_email' => $user->personal_email_verified_at === null
+                ? null
+                : $user->personal_email,
             'role' => $user->role,
             'first_name' => $info?->first_name,
             'last_name' => $info?->last_name,
