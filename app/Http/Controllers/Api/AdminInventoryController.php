@@ -292,9 +292,16 @@ class AdminInventoryController extends Controller
                 }
             }
 
+            $item = $item->fresh(['photos', 'seller']);
+
+            // Posted last, once the proof photos are stored, so the seller's
+            // card has both of them to show. Their thread used to end at the
+            // acceptance and never say the item had actually arrived.
+            $this->notifier->itemAcquired($item, $request->user());
+
             return response()->json([
                 'message' => 'Item received and verified',
-                'data' => ItemPresenter::forAdmin($item->fresh(['photos', 'seller'])),
+                'data' => ItemPresenter::forAdmin($item),
             ], 200);
         });
     }
