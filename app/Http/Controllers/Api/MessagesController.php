@@ -162,13 +162,14 @@ class MessagesController extends Controller
 
             $rows = $messageQuery->orderBy('sent_at', 'asc')->get();
 
-            // The listing card behind an "item_listed" message. Conversations
-            // are scoped per item, so one lookup serves the whole thread.
-            // Admin gets the admin view (with the review prices); the seller
-            // gets their own; anyone else gets no card.
+            // The listing card behind an "item_listed" or "item_acquired"
+            // message. Conversations are scoped per item, so one lookup serves
+            // the whole thread. Admin gets the admin view (with the review
+            // prices); the seller gets their own, which now carries the
+            // counter's proof photos; anyone else gets no card.
             $itemCard = null;
 
-            if ($rows->contains(fn ($m) => ($m->kind ?? '') === Message::KIND_ITEM_LISTED)) {
+            if ($rows->contains(fn ($m) => in_array($m->kind ?? '', Message::ITEM_KINDS, true))) {
                 $listedItem = Item::with(['photos', 'seller'])->find($itemId);
 
                 if ($listedItem !== null) {
@@ -206,7 +207,9 @@ class MessagesController extends Controller
                         'order' => $msg->transaction === null ? null : ($isAdmin
                             ? TransactionPresenter::forAdmin($msg->transaction)
                             : TransactionPresenter::forBuyer($msg->transaction)),
-                        'item_card' => $msg->kind === Message::KIND_ITEM_LISTED ? $itemCard : null,
+                        'item_card' => in_array($msg->kind ?? '', Message::ITEM_KINDS, true)
+                            ? $itemCard
+                            : null,
                         'sent_at' => $msg->sent_at,
                     ];
                 });
