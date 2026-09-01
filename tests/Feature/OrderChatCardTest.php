@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Item;
 use App\Models\ItemPhoto;
 use App\Models\Message;
 use App\Models\Transaction;
@@ -306,5 +307,35 @@ class OrderChatCardTest extends MarketplaceTestCase
         // The order travelling with each card is still the live one - the
         // amounts and the item never freeze, only the state does.
         $this->assertSame(Transaction::PAYMENT_VERIFIED, $placed['order']['payment_status']);
+    }
+
+    // ── The turnover, back in the seller's thread ────────────────────────
+
+    #[Test]
+    public function receiving_an_item_tells_the_seller_and_carries_both_proofs(): void
+    {
+        // The offer was accepted - a price is agreed - but the item has not
+        // arrived yet. Until now the thread simply went quiet at this point.
+        $seller = $this->student();
+        $item = Item::factory()->for($seller, 'seller')->create([
+            'acquisition_price' => '180.00',
+        ]);
+
+        $this->actingAs($this->admin())
+            ->postJson("/api/admin/items/{$item->item_id}/verify-turnover", [
+                'turnover_photo' => UploadedFile::fake()->image('received.jpg'),
+                'payout_photo' => UploadedFile::fake()->image('paid.jpg'),
+            ])->assertOk();
+
+        $card = collect(
+            $this->actingAs($seller)->getJson("/api/messages/{$item->item_id}")->json('data')
+        )->firstWhere('kind', Message::KIND_ITEM_ACQUIRED);
+
+        $this->assertNotNull($card, 'The seller was never told their item arrived.');
+
+        // Both photographs reach the seller: they are in them.
+        $this->assertNotNull($card['item_card']['turnover_photo']);
+        $this->assertNotNull($card['item_card']['seller_payout_photo']);
+        $this->assertSame('180.00', $card['item_card']['seller_payout_amount']);
     }
 }
