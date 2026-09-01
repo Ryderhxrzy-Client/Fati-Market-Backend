@@ -183,4 +183,34 @@ class WalkInPickupTest extends MarketplaceTestCase
     {
         return User::where('role', User::ROLE_ADMIN)->orderBy('user_id')->firstOrFail();
     }
+
+    #[Test]
+    public function a_cash_order_completes_at_the_counter_with_its_photo(): void
+    {
+        // The walk-in case the pre-check used to refuse: cash is not verified
+        // in advance, because the counter is where it is handed over.
+        $item = $this->publishedItem('250', '180');
+        $buyer = $this->student();
+
+        $id = $this->actingAs($buyer)->postJson('/api/checkout', [
+            'item_id' => $item->item_id,
+            'points_used' => 0,
+            'payment_method' => 'cash',
+        ])->assertStatus(201)->json('data.transaction_id');
+
+        $this->actingAs($this->admin())
+            ->postJson("/api/admin/transactions/{$id}/approve-order")
+            ->assertOk()
+            ->assertJsonPath('data.payment_status', Transaction::PAYMENT_UNPAID);
+
+        $response = $this->actingAs($this->admin())
+            ->postJson("/api/admin/transactions/{$id}/complete", [
+                'handover_photo' => UploadedFile::fake()->image('handover.jpg'),
+            ])->assertOk();
+
+        $this->assertSame('completed', $response->json('data.status'));
+        $this->assertSame(Transaction::PAYMENT_VERIFIED, $response->json('data.payment_status'));
+        $this->assertNotNull($response->json('data.handover_photo'));
+        $this->assertSame(2, $buyer->fresh()->wallet_points);
+    }
 }
