@@ -36,7 +36,15 @@ class PasswordResetController extends Controller
         ]);
 
         $email = strtolower(trim($validated['email']));
-        $user = User::where('email', $email)->first();
+
+        // Either address reaches the account. A student who signed up with
+        // Google has no password at all, so this is also how they set their
+        // first one - and after they graduate the personal address is the only
+        // one that still arrives anywhere.
+        $user = User::where('email', $email)
+            ->orWhere(fn ($q) => $q->where('personal_email', $email)
+                ->whereNotNull('personal_email_verified_at'))
+            ->first();
 
         // Same answer for a real address and an invented one.
         $reply = response()->json([
@@ -95,6 +103,9 @@ class PasswordResetController extends Controller
         $email = strtolower(trim($validated['email']));
         $row = DB::table('password_reset_tokens')->where('email', $email)->first();
 
+        // The code was sent to whichever address was asked for, so that is the
+        // address it is spent against.
+
         if ($row === null || !Hash::check($validated['code'], $row->token)) {
             return response()->json(['message' => 'That code is not right. Ask for a new one.'], 422);
         }
@@ -105,7 +116,10 @@ class PasswordResetController extends Controller
             return response()->json(['message' => 'That code has expired. Ask for a new one.'], 422);
         }
 
-        $user = User::where('email', $email)->first();
+        $user = User::where('email', $email)
+            ->orWhere(fn ($q) => $q->where('personal_email', $email)
+                ->whereNotNull('personal_email_verified_at'))
+            ->first();
 
         if ($user === null) {
             return response()->json(['message' => 'That code is not right. Ask for a new one.'], 422);
