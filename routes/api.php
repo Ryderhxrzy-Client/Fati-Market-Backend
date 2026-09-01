@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\CategoriesController;
 use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\PersonalEmailController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\FavoritesController;
 use App\Http\Controllers\Api\FcmDeviceTokenController;
@@ -94,6 +95,15 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [CheckoutController::class, 'store']);
         Route::post('/{transaction_id}/payment-proof', [CheckoutController::class, 'uploadPaymentProof']);
         Route::post('/{transaction_id}/cancel', [CheckoutController::class, 'cancel']);
+    });
+
+    // The address a student keeps after graduating. Proven by a code before it
+    // counts, and proven again on every change - otherwise anyone holding an
+    // open session could point the recovery address at themselves.
+    Route::prefix('account/personal-email')->group(function () {
+        Route::post('/', [PersonalEmailController::class, 'request']);
+        Route::post('/confirm', [PersonalEmailController::class, 'confirm']);
+        Route::delete('/', [PersonalEmailController::class, 'destroy']);
     });
 
     // Transactions routes
