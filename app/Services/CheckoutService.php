@@ -222,6 +222,32 @@ class CheckoutService
     }
 
     /**
+     * Whether this order can be handed over now.
+     *
+     * GCash has to have landed first - the item must not leave before the money
+     * arrives. Cash is the other way round: the handover IS the payment, so an
+     * unpaid cash order is completable, and completing it is what records it as
+     * paid.
+     *
+     * Public because the completion endpoint has to answer the same question
+     * before it accepts a handover photo. Asking it twice, in two wordings, is
+     * what let the walk-in flow refuse an order [complete] would have taken.
+     */
+    public function canComplete(Transaction $transaction): bool
+    {
+        if ($transaction->status === Transaction::STATUS_COMPLETED) {
+            return true;
+        }
+
+        if ($transaction->isTerminal()) {
+            return false;
+        }
+
+        return $transaction->payment_status === Transaction::PAYMENT_VERIFIED
+            || $transaction->payment_method === Transaction::METHOD_CASH;
+    }
+
+    /**
      * Admin approves a pay-at-the-store order.
      *
      * Approving a cash order accepts the payment method the buyer chose and
@@ -342,15 +368,13 @@ class CheckoutService
                 throw new RuntimeException('This order was cancelled and cannot be completed.');
             }
 
-            if ($locked->payment_status !== Transaction::PAYMENT_VERIFIED) {
-                // Cash is paid at the counter, and this is that counter: an
-                // admin completing a cash order is saying the money was handed
-                // over. GCash has to land before the item does, so it still has
-                // to be verified from its proof first.
-                if ($locked->payment_method !== Transaction::METHOD_CASH) {
-                    throw new RuntimeException('Payment must be verified before completing the order.');
-                }
+            if (!$this->canComplete($locked)) {
+                throw new RuntimeException('Payment must be verified before completing the order.');
+            }
 
+            // Cash is paid at the counter, and this is that counter: an admin
+            // completing a cash order is saying the money was handed over.
+            if ($locked->payment_status !== Transaction::PAYMENT_VERIFIED) {
                 $locked->update([
                     'payment_status' => Transaction::PAYMENT_VERIFIED,
                     'payment_verified_at' => now(),
