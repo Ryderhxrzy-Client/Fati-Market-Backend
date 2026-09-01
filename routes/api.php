@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\CategoriesController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\FavoritesController;
@@ -154,6 +155,18 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{transaction_id}/complete', [TransactionController::class, 'complete']);
             Route::post('/{transaction_id}/cancel', [TransactionController::class, 'cancel']);
             Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
+        });
+
+        // What has been happening in the store, assembled from the rows that
+        // already record it. Both the app and the website read this one feed.
+        Route::get('admin/activity', [ActivityController::class, 'index']);
+
+        // Category management. Reading them is public (both apps need the
+        // picker); changing them is Admin's alone.
+        Route::prefix('admin/categories')->group(function () {
+            Route::post('/', [CategoriesController::class, 'store']);
+            Route::put('/{category_id}', [CategoriesController::class, 'update']);
+            Route::delete('/{category_id}', [CategoriesController::class, 'destroy']);
         });
 
         Route::prefix('admin')->group(function () {
