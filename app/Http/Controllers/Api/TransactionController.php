@@ -361,7 +361,11 @@ class TransactionController extends Controller
             // image and the order must actually be completable, so a refused
             // completion does not leave a stray "proof" on an open order.
             if ($request->hasFile('handover_photo')) {
-                if ($transaction->payment_status !== Transaction::PAYMENT_VERIFIED && !$alreadyCompleted) {
+                // The same question the service asks, so this pre-check can
+                // never refuse an order the completion itself would take - a
+                // cash order settles at this counter, and used to be rejected
+                // here after the admin had already photographed the handover.
+                if (!$this->checkout->canComplete($transaction)) {
                     return response()->json([
                         'message' => 'Payment must be verified before completing the order.',
                     ], 409);
