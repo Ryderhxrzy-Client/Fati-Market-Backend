@@ -148,6 +148,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
             Route::get('/{transaction_id}', [TransactionController::class, 'getTransaction']);
             Route::post('/{transaction_id}/verify-payment', [TransactionController::class, 'verifyPayment']);
+            Route::post('/{transaction_id}/approve-order', [TransactionController::class, 'approveOrder']);
             Route::post('/{transaction_id}/reject-payment', [TransactionController::class, 'rejectPayment']);
             Route::post('/{transaction_id}/ready-for-pickup', [TransactionController::class, 'markReadyForPickup']);
             Route::post('/{transaction_id}/complete', [TransactionController::class, 'complete']);
