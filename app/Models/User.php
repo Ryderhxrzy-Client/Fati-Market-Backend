@@ -24,6 +24,11 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'email',
+        // When the address was proven - by an emailed code, or by Google having
+        // proven it already. Fillable because it now decides whether an account
+        // may sign in: left out, every assignment to it was silently dropped
+        // and no one was ever verified.
+        'email_verified_at',
         'password',
         'wallet_points',
         'role',
