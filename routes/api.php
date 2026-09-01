@@ -4,6 +4,8 @@ use App\Http\Controllers\Api\AdminInventoryController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\CategoriesController;
+use App\Http\Controllers\Api\GoogleAuthController;
+use App\Http\Controllers\Api\PasswordResetController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\FavoritesController;
 use App\Http\Controllers\Api\FcmDeviceTokenController;
@@ -16,6 +18,21 @@ use Illuminate\Support\Facades\Route;
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// Google is a way to sign in, not a way past the school's checks: registering
+// still needs the verification document, so it has its own route.
+Route::post('/auth/google', [GoogleAuthController::class, 'login']);
+Route::post('/auth/google/register', [GoogleAuthController::class, 'register']);
+
+// Proving a school email address. This is what replaced the uploaded student
+// ID: only a student holds one of these addresses, and only its holder can read
+// what is sent to it.
+Route::post('/auth/verify-email', [AuthController::class, 'verifyEmail']);
+Route::post('/auth/resend-code', [AuthController::class, 'resendCode']);
+
+// Forgotten passwords, by emailed code.
+Route::post('/auth/forgot-password', [PasswordResetController::class, 'request']);
+Route::post('/auth/reset-password', [PasswordResetController::class, 'reset']);
 
 // Public categories routes (can view categories without auth)
 Route::get('/categories', [CategoriesController::class, 'getAllCategories']);
