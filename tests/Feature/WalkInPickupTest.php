@@ -212,5 +212,13 @@ class WalkInPickupTest extends MarketplaceTestCase
         $this->assertSame(Transaction::PAYMENT_VERIFIED, $response->json('data.payment_status'));
         $this->assertNotNull($response->json('data.handover_photo'));
         $this->assertSame(2, $buyer->fresh()->wallet_points);
+
+        // The buyer gets that proof too - it is how they see who collected the
+        // item - so My Orders has something to render.
+        $mine = collect($this->actingAs($buyer)->getJson('/api/transactions')->json('data'))
+            ->firstWhere('transaction_id', $id);
+
+        $this->assertNotNull($mine['handover_photo']);
+        $this->assertNotNull($mine['completed_at']);
     }
 }
