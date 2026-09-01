@@ -50,6 +50,16 @@ return [
         'qr_image_url' => env('GCASH_QR_IMAGE_URL'),
     ],
 
+    /*
+     * The OAuth client the Android app signs in with. The ID token it sends is
+     * accepted only if Google minted it for this exact client, so this value
+     * must be the WEB client ID from the same Google Cloud project as the app's
+     * Android client - not the Android client's own ID.
+     */
+    'google' => [
+        'client_id' => env('GOOGLE_CLIENT_ID'),
+    ],
+
     'cloudinary' => [
         'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
         'key' => env('CLOUDINARY_KEY'),
