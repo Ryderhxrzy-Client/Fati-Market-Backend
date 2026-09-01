@@ -24,6 +24,11 @@ class User extends Authenticatable
      */
     protected $fillable = [
         'email',
+        // The address a student keeps after graduating - a way back in once the
+        // school account is gone. A credential, so it is unique and carries its
+        // own proof; unverified, it does nothing.
+        'personal_email',
+        'personal_email_verified_at',
         // When the address was proven - by an emailed code, or by Google having
         // proven it already. Fillable because it now decides whether an account
         // may sign in: left out, every assignment to it was silently dropped
@@ -54,6 +59,7 @@ class User extends Authenticatable
     {
         return [
             'email_verified_at' => 'datetime',
+            'personal_email_verified_at' => 'datetime',
             'password' => 'hashed',
             'wallet_points' => 'integer',
             'is_active' => 'boolean',
