@@ -158,23 +158,40 @@ class TransactionPresenter
 
         $actions = ['cancel'];
 
+        // Verifying says the money arrived, which only a GCash proof shows.
         if ($transaction->payment_status === Transaction::PAYMENT_PROOF_SUBMITTED) {
             $actions[] = 'verify_payment';
             $actions[] = 'reject_payment';
         }
 
+        // A cash order is approved, not paid. The money changes hands at the
+        // counter, so approving accepts the method the buyer chose and holds
+        // the item; the payment itself is settled by completing the order.
         if ($transaction->payment_status === Transaction::PAYMENT_UNPAID
-            && $transaction->payment_method === Transaction::METHOD_CASH) {
-            // Cash is handed over at the store, so Admin confirms it directly.
-            $actions[] = 'verify_payment';
+            && $transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->status === Transaction::STATUS_PENDING_PAYMENT) {
+            $actions[] = 'approve_order';
         }
 
-        if ($transaction->payment_status === Transaction::PAYMENT_VERIFIED
-            && $transaction->pickup_status === Transaction::PICKUP_NOT_READY) {
+        // Pickup is unlocked by the approval, not by the payment - otherwise a
+        // pay-at-the-store buyer could never be told their item is waiting.
+        $approved = $transaction->payment_status === Transaction::PAYMENT_VERIFIED
+            || in_array($transaction->status, [
+                Transaction::STATUS_RESERVED,
+                Transaction::STATUS_READY_FOR_PICKUP,
+            ], true);
+
+        if ($approved && $transaction->pickup_status === Transaction::PICKUP_NOT_READY) {
             $actions[] = 'mark_ready_for_pickup';
         }
 
-        if ($transaction->payment_status === Transaction::PAYMENT_VERIFIED) {
+        // Completing is the handover, and for cash it is also the payment, so
+        // a buyer standing at the counter can be served whether or not their
+        // order was approved in advance. GCash has to have landed first.
+        $payableAtCounter = $transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->payment_status === Transaction::PAYMENT_UNPAID;
+
+        if ($approved || $payableAtCounter) {
             $actions[] = 'complete';
         }
 
