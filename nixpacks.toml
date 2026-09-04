@@ -1,0 +1,19 @@
+# Nixpacks build plan for the Fati-Market API.
+#
+# This is a backend-only Laravel app: it serves JSON from routes/api.php plus two
+# self-contained Blade pages, and no view references @vite. There is no frontend
+# to compile, so Node has no place in the image at all.
+#
+# Pinning the provider to PHP is what fixes the deploy. Left to auto-detection,
+# Nixpacks saw a package.json, installed its own Node 18.x, and ran `npm run
+# build` — which is where Vite's "requires Node 20.19+ or 22.12+" and
+# @tailwindcss/oxide's "Cannot find native binding" both came from. Pinned here,
+# no Node phase is ever generated, and it cannot come back if a package.json is
+# reintroduced by accident.
+providers = ["php"]
+
+[variables]
+    # Laravel's front controller. This matches what the PHP provider already
+    # infers from ./artisan; it is stated outright so the document root does not
+    # depend on provider defaults.
+    NIXPACKS_PHP_ROOT_DIR = "/app/public"
