@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StudentInformation;
 use App\Models\User;
+use App\Models\UserAuthIdentity;
 use App\Services\GoogleIdentity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -47,7 +48,20 @@ class GoogleAuthController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $user = User::where('email', $identity['email'])->first();
+        $user = UserAuthIdentity::where('provider', 'google')
+            ->where('provider_subject', $identity['subject'])
+            ->with('user')
+            ->first()?->user;
+
+        // Accounts created before identities were recorded still belong to
+        // this verified school address. Link them once, then use Google's
+        // immutable subject for every later sign-in.
+        if ($user === null) {
+            $user = User::where('email', $identity['email'])->first();
+            if ($user !== null) {
+                $this->linkGoogleIdentity($user, $identity);
+            }
+        }
 
         if ($user === null) {
             // Registering creates records, so it does not happen on the sign-in
@@ -122,6 +136,8 @@ class GoogleAuthController extends Controller
                     'email_verified_at' => now(),
                 ]);
 
+                $this->linkGoogleIdentity($user, $identity);
+
                 $info = StudentInformation::create([
                     'user_id' => $user->user_id,
                     'first_name' => $identity['first_name'],
@@ -171,6 +187,15 @@ class GoogleAuthController extends Controller
             'profile_picture' => $info?->profile_picture,
             'wallet_points' => $user->wallet_points,
         ];
+    }
+
+    /** @param array{subject: string, email: string} $identity */
+    private function linkGoogleIdentity(User $user, array $identity): void
+    {
+        UserAuthIdentity::updateOrCreate(
+            ['provider' => 'google', 'provider_subject' => $identity['subject']],
+            ['user_id' => $user->user_id, 'provider_email' => $identity['email']],
+        );
     }
 
 }

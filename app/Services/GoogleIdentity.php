@@ -24,7 +24,7 @@ class GoogleIdentity
     public const REQUIRED_DOMAIN = '@student.fatima.edu.ph';
 
     /**
-     * @return array{email: string, first_name: string, last_name: string, picture: ?string}
+     * @return array{subject: string, email: string, first_name: string, last_name: string, picture: ?string}
      *
      * @throws RuntimeException with a message meant for the user.
      */
@@ -77,7 +77,14 @@ class GoogleIdentity
             );
         }
 
+        $subject = trim($claims['sub'] ?? '');
+
+        if ($subject === '') {
+            throw new RuntimeException('That Google account has no stable identity. Try again.');
+        }
+
         return [
+            'subject' => $subject,
             'email' => $email,
             'first_name' => trim($claims['given_name'] ?? '') ?: 'Student',
             'last_name' => trim($claims['family_name'] ?? '') ?: '',

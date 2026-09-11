@@ -35,6 +35,7 @@ class User extends Authenticatable
         // and no one was ever verified.
         'email_verified_at',
         'password',
+        'password_set_at',
         'wallet_points',
         'role',
         'is_active',
@@ -61,6 +62,7 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'personal_email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'password_set_at' => 'datetime',
             'wallet_points' => 'integer',
             'is_active' => 'boolean',
         ];
@@ -101,6 +103,12 @@ class User extends Authenticatable
     public function studentInfo()
     {
         return $this->hasOne(StudentInformation::class, 'user_id', 'user_id');
+    }
+
+    /** The external identities that can authenticate this account. */
+    public function authIdentities()
+    {
+        return $this->hasMany(UserAuthIdentity::class, 'user_id', 'user_id');
     }
 
     /**

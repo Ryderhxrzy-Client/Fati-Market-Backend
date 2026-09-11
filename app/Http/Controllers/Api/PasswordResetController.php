@@ -125,7 +125,10 @@ class PasswordResetController extends Controller
             return response()->json(['message' => 'That code is not right. Ask for a new one.'], 422);
         }
 
-        $user->update(['password' => Hash::make($validated['password'])]);
+        $user->update([
+            'password' => Hash::make($validated['password']),
+            'password_set_at' => now(),
+        ]);
 
         // One code, one use - and every existing session goes with it, since a
         // forgotten password is also how a stolen one gets noticed.

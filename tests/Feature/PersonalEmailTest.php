@@ -40,6 +40,8 @@ class PersonalEmailTest extends MarketplaceTestCase
             ->postJson('/api/account/personal-email/confirm', [
                 'personal_email' => $address,
                 'code' => '123456',
+                'password' => 'Str0ng!pass',
+                'password_confirmation' => 'Str0ng!pass',
             ])->assertOk();
     }
 
@@ -54,6 +56,8 @@ class PersonalEmailTest extends MarketplaceTestCase
         $fresh = $student->fresh();
         $this->assertSame(self::PERSONAL, $fresh->personal_email);
         $this->assertNotNull($fresh->personal_email_verified_at);
+        $this->assertNotNull($fresh->password_set_at);
+        $this->assertTrue(Hash::check('Str0ng!pass', $fresh->password));
     }
 
     #[Test]
@@ -90,6 +94,8 @@ class PersonalEmailTest extends MarketplaceTestCase
             ->postJson('/api/account/personal-email/confirm', [
                 'personal_email' => 'thief@gmail.com',
                 'code' => '000000',
+                'password' => 'Str0ng!pass',
+                'password_confirmation' => 'Str0ng!pass',
             ])->assertStatus(422);
 
         $this->assertSame(self::PERSONAL, $student->fresh()->personal_email);

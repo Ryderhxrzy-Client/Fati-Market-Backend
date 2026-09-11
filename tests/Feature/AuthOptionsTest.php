@@ -34,6 +34,7 @@ class AuthOptionsTest extends MarketplaceTestCase
         Http::fake([
             'oauth2.googleapis.com/*' => Http::response(array_merge([
                 'aud' => self::CLIENT_ID,
+                'sub' => 'google-stable-subject-juan-cruz',
                 'email' => 'juan.cruz@student.fatima.edu.ph',
                 'email_verified' => 'true',
                 'given_name' => 'Juan',
