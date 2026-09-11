@@ -201,6 +201,42 @@ class CheckoutController extends Controller
     }
 
     /**
+     * Switch an unpaid order between cash and GCash.
+     * POST /api/checkout/{transaction_id}/payment-method
+     *
+     * The same choice the checkout screen offers, available while the order
+     * is still waiting for payment.
+     */
+    public function changePaymentMethod(Request $request, $transactionId)
+    {
+        $validated = $request->validate([
+            'payment_method' => ['required', 'in:cash,gcash'],
+        ]);
+
+        $transaction = Transaction::where('transaction_id', $transactionId)->first();
+
+        if (!$transaction) {
+            return response()->json(['message' => 'Transaction not found'], 404);
+        }
+
+        if ($transaction->buyer_id !== $request->user()->user_id) {
+            return response()->json(['message' => 'This is not your order.'], 403);
+        }
+
+        try {
+            $transaction = $this->checkout->changePaymentMethod($transaction, $validated['payment_method']);
+
+            return response()->json([
+                'message' => 'Payment method updated.',
+                'data' => TransactionPresenter::forBuyer($transaction->load('item.photos')),
+            ], 200);
+
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
+    }
+
+    /**
      * Where to send a GCash payment.
      * GET /api/checkout/payment-details
      *

@@ -156,6 +156,15 @@ class SellerTurnoverTest extends MarketplaceTestCase
     #[Test]
     public function scheduling_notifies_the_seller_and_reminders_fire_once_each(): void
     {
+        // Meet-ups are booked inside store hours, so pin both the hours and
+        // the clock: a Wednesday morning, with the meet-up that afternoon.
+        config([
+            'store.open_time' => '08:00',
+            'store.close_time' => '17:00',
+            'store.open_days' => '1,2,3,4,5,6',
+        ]);
+        $this->travelTo(Carbon::parse('2026-09-09 07:00:00'));
+
         [$item, $seller, $admin] = $this->listedItem();
 
         $this->actingAs($admin)

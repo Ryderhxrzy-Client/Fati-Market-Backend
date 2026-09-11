@@ -162,6 +162,53 @@ class CheckoutService
         return $order;
     }
 
+    /**
+     * The buyer switches between cash and GCash while nothing is paid yet.
+     *
+     * The reservation keeps its original deadline: changing how to pay is not
+     * a way to hold an item for longer.
+     *
+     * @throws RuntimeException when the order is past the point of changing.
+     */
+    public function changePaymentMethod(Transaction $transaction, string $paymentMethod): Transaction
+    {
+        $changed = false;
+
+        $order = DB::transaction(function () use ($transaction, $paymentMethod, &$changed) {
+            $locked = Transaction::where('transaction_id', $transaction->transaction_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (!$locked->canChangePaymentMethod()) {
+                throw new RuntimeException($locked->isTerminal()
+                    ? 'This order is already closed.'
+                    : 'The payment method can only be changed before you pay or the store approves your order.');
+            }
+
+            if ($locked->payment_method === $paymentMethod) {
+                return $locked;
+            }
+
+            $locked->update(['payment_method' => $paymentMethod]);
+            $changed = true;
+
+            return $locked->fresh();
+        });
+
+        // Outside the transaction, like every other notice: a chat hiccup must
+        // never undo a change that already succeeded.
+        if ($changed) {
+            $item = Item::where('item_id', $order->item_id)->first();
+            $buyer = User::where('user_id', $order->buyer_id)->first();
+
+            if ($item !== null && $buyer !== null) {
+                $this->notifier->paymentMethodChanged($order, $item, $buyer);
+            }
+        }
+
+        return $order;
+    }
+
     /** Record a submitted GCash proof and hand the order to Admin. */
     public function attachPaymentProof(
         Transaction $transaction,

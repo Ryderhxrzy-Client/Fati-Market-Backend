@@ -12,6 +12,7 @@ use App\Http\Controllers\Api\FavoritesController;
 use App\Http\Controllers\Api\FcmDeviceTokenController;
 use App\Http\Controllers\Api\ItemsController;
 use App\Http\Controllers\Api\MessagesController;
+use App\Http\Controllers\Api\StoreController;
 use App\Http\Controllers\Api\StudentManagementController;
 use App\Http\Controllers\Api\TransactionController;
 use Illuminate\Support\Facades\Route;
@@ -39,8 +40,14 @@ Route::post('/auth/reset-password', [PasswordResetController::class, 'reset']);
 Route::get('/categories', [CategoriesController::class, 'getAllCategories']);
 Route::get('/categories/{category_id}', [CategoriesController::class, 'getCategoryById']);
 
+// When the store is open. The meet-up picker is drawn from it.
+Route::get('/store/hours', [StoreController::class, 'hours']);
+
 // Public items routes (can view items without auth, but supports optional Sanctum auth)
 Route::get('/items', [ItemsController::class, 'getAllItems']);
+// A student's own listing history, every status. Declared before the wildcard
+// below so "mine" is never read as an item id.
+Route::get('/items/mine', [ItemsController::class, 'myItems'])->middleware('auth:sanctum');
 Route::get('/items/{item_id}', [ItemsController::class, 'getItemDetails']);
 
 // Protected routes (require authentication)
@@ -94,6 +101,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/payment-details', [CheckoutController::class, 'paymentDetails']);
         Route::post('/', [CheckoutController::class, 'store']);
         Route::post('/{transaction_id}/payment-proof', [CheckoutController::class, 'uploadPaymentProof']);
+        Route::post('/{transaction_id}/payment-method', [CheckoutController::class, 'changePaymentMethod']);
         Route::post('/{transaction_id}/cancel', [CheckoutController::class, 'cancel']);
     });
 
@@ -160,6 +168,11 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{item_id}/publish', [AdminInventoryController::class, 'publish']);
             Route::post('/{item_id}/unpublish', [AdminInventoryController::class, 'unpublish']);
             Route::post('/{item_id}/reject', [AdminInventoryController::class, 'reject']);
+
+            // Ofelia's own photos, while the item is still off the catalog.
+            Route::get('/{item_id}/photos', [AdminInventoryController::class, 'photos']);
+            Route::post('/{item_id}/photos', [AdminInventoryController::class, 'addPhotos']);
+            Route::delete('/{item_id}/photos/{photo_id}', [AdminInventoryController::class, 'deletePhoto']);
 
             Route::put('/{item_id}', [AdminInventoryController::class, 'update']);
         });

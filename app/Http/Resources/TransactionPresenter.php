@@ -67,6 +67,8 @@ class TransactionPresenter
             'requires_payment_proof' => $transaction->payment_method === Transaction::METHOD_GCASH
                 && $transaction->payment_proof === null
                 && !$transaction->isTerminal(),
+            // Cash <-> GCash, while nothing has been paid or approved yet.
+            'can_change_payment_method' => $transaction->canChangePaymentMethod(),
         ]);
     }
 

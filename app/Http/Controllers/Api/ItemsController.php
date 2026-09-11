@@ -250,6 +250,33 @@ class ItemsController extends Controller
     }
 
     /**
+     * Everything the signed-in student has ever offered, newest first.
+     * GET /api/items/mine
+     *
+     * The seller's listing history: still under review, turned down, or long
+     * since handed over and sold. Always the seller's own view whatever the
+     * status, so the agreed price and the payout stay visible and the buyer's
+     * reward figure never appears.
+     */
+    public function myItems(Request $request)
+    {
+        $items = Item::with([
+            'seller' => fn ($q) => $q->select('user_id', 'email'),
+            'photos' => fn ($q) => $q->select('photo_id', 'item_id', 'photo_url'),
+        ])
+            ->where('seller_id', $request->user()->user_id)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(fn (Item $item) => ItemPresenter::forSeller($item));
+
+        return response()->json([
+            'message' => 'Your listings retrieved successfully',
+            'data' => $items,
+            'count' => $items->count(),
+        ], 200);
+    }
+
+    /**
      * Get item details.
      * GET /api/items/{item_id}
      */
