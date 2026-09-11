@@ -163,7 +163,7 @@ class FcmService
 
     private function accessToken(): string
     {
-        $credentialsPath = config('services.fcm.credentials');
+        $credentialsPath = app(FcmCredentials::class)->path();
         // Allow a portable Laravel-relative path such as storage/fati-market-credentials.json.
         if (!preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/])/', $credentialsPath)) {
             $credentialsPath = base_path($credentialsPath);
