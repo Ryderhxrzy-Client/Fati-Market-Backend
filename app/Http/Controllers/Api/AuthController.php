@@ -55,6 +55,7 @@ class AuthController extends Controller
                 $user = User::create([
                     'email' => strtolower(trim($validated['email'])),
                     'password' => Hash::make($validated['password']),
+                    'password_set_at' => now(),
                     'wallet_points' => 0,
                     'role' => User::ROLE_STUDENT,
                     // Both flip together the moment the code comes back.

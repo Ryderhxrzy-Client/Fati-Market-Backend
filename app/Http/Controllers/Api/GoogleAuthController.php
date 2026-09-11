@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\StudentInformation;
 use App\Models\User;
+use App\Models\UserAuthIdentity;
 use App\Services\GoogleIdentity;
-use Cloudinary\Cloudinary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -48,7 +48,20 @@ class GoogleAuthController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        $user = User::where('email', $identity['email'])->first();
+        $user = UserAuthIdentity::where('provider', 'google')
+            ->where('provider_subject', $identity['subject'])
+            ->with('user')
+            ->first()?->user;
+
+        // Accounts created before identities were recorded still belong to
+        // this verified school address. Link them once, then use Google's
+        // immutable subject for every later sign-in.
+        if ($user === null) {
+            $user = User::where('email', $identity['email'])->first();
+            if ($user !== null) {
+                $this->linkGoogleIdentity($user, $identity);
+            }
+        }
 
         if ($user === null) {
             // Registering creates records, so it does not happen on the sign-in
@@ -87,7 +100,6 @@ class GoogleAuthController extends Controller
     {
         $validated = $request->validate([
             'id_token' => ['required', 'string'],
-            'profile_picture' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
         ]);
 
         try {
@@ -103,11 +115,10 @@ class GoogleAuthController extends Controller
         }
 
         try {
-            // Google already has a picture of them; uploading another is
-            // optional rather than a second thing to find.
-            $profileUrl = $request->hasFile('profile_picture')
-                ? $this->upload($request->file('profile_picture'), 'student_profiles')
-                : $identity['picture'];
+            // The identity token is the profile source of truth. It gives us
+            // the name and picture belonging to the account that just signed
+            // in, rather than accepting a photo from an unrelated device.
+            $profileUrl = $identity['picture'];
 
             $result = DB::transaction(function () use ($identity, $profileUrl) {
                 $user = User::create([
@@ -124,6 +135,8 @@ class GoogleAuthController extends Controller
                     'is_active' => true,
                     'email_verified_at' => now(),
                 ]);
+
+                $this->linkGoogleIdentity($user, $identity);
 
                 $info = StudentInformation::create([
                     'user_id' => $user->user_id,
@@ -176,26 +189,13 @@ class GoogleAuthController extends Controller
         ];
     }
 
-    /** @throws RuntimeException when Cloudinary gives nothing back. */
-    private function upload($file, string $folder): string
+    /** @param array{subject: string, email: string} $identity */
+    private function linkGoogleIdentity(User $user, array $identity): void
     {
-        $cloudinary = new Cloudinary([
-            'cloud' => [
-                'cloud_name' => config('services.cloudinary.cloud_name'),
-                'api_key' => config('services.cloudinary.key'),
-                'api_secret' => config('services.cloudinary.secret'),
-            ],
-        ]);
-
-        $result = $cloudinary->uploadApi()->upload($file->getRealPath(), [
-            'folder' => $folder,
-            'resource_type' => 'image',
-        ]);
-
-        if (!isset($result['secure_url'])) {
-            throw new RuntimeException('Failed to upload the photo.');
-        }
-
-        return $result['secure_url'];
+        UserAuthIdentity::updateOrCreate(
+            ['provider' => 'google', 'provider_subject' => $identity['subject']],
+            ['user_id' => $user->user_id, 'provider_email' => $identity['email']],
+        );
     }
+
 }

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Services\EmailVerification;
 use App\Services\GoogleIdentity;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 use RuntimeException;
 
@@ -78,6 +79,15 @@ class PersonalEmailController extends Controller
         $validated = $request->validate([
             'personal_email' => ['required', 'email'],
             'code' => ['required', 'string'],
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+                'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/',
+            ],
+        ], [
+            'password.regex' => 'Password must contain uppercase and lowercase letters, a number, and a special character (@$!%*?&).',
         ]);
 
         $address = strtolower(trim($validated['personal_email']));
@@ -105,10 +115,12 @@ class PersonalEmailController extends Controller
         $user->update([
             'personal_email' => $address,
             'personal_email_verified_at' => now(),
+            'password' => Hash::make($validated['password']),
+            'password_set_at' => now(),
         ]);
 
         return response()->json([
-            'message' => "{$address} is linked. You can sign in with it if you lose your school account.",
+            'message' => "{$address} is linked and your password is set. You can sign in with it if you lose your school account.",
             'data' => [
                 'personal_email' => $address,
                 'personal_email_verified_at' => $user->fresh()->personal_email_verified_at,
