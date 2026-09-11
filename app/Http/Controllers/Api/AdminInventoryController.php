@@ -5,12 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Models\Item;
+use App\Models\ItemPhoto;
 use App\Services\ItemLifecycleService;
 use App\Services\OrderChatNotifier;
 use App\Services\PhotoUploader;
 use App\Support\ItemQr;
 use App\Support\Money;
+use App\Support\StoreHours;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -200,6 +203,20 @@ class AdminInventoryController extends Controller
     public function setMeetupSchedule(Request $request, $itemId)
     {
         $request->validate(['meetup_schedule' => ['nullable', 'date']]);
+
+        // Clearing the schedule is always allowed. A new time has to fall
+        // within this month, on a day and at an hour the store is open.
+        if ($request->filled('meetup_schedule')) {
+            $at = Carbon::parse($request->input('meetup_schedule'))->setTimezone(config('app.timezone'));
+            $refusal = StoreHours::refusalFor($at);
+
+            if ($refusal !== null) {
+                return response()->json([
+                    'message' => $refusal,
+                    'errors' => ['meetup_schedule' => [$refusal]],
+                ], 422);
+            }
+        }
 
         return $this->withItem($itemId, function (Item $item) use ($request) {
             $item = $this->lifecycle->setMeetupSchedule($item, $request->input('meetup_schedule'));
@@ -519,6 +536,106 @@ class AdminInventoryController extends Controller
                 'updated_by_admin' => $request->user()->user_id,
             ], 200);
         });
+    }
+
+    // ── Photos ───────────────────────────────────────────────────────────
+
+    /** The most photos a listing carries - what a seller can upload, too. */
+    private const MAX_PHOTOS = 5;
+
+    /**
+     * The listing's photos, with the ids that removing one needs.
+     * GET /api/admin/items/{item_id}/photos
+     */
+    public function photos($itemId)
+    {
+        return $this->withItem($itemId, fn (Item $item) => $this->photoList($item, 'Item photos retrieved'));
+    }
+
+    /**
+     * Add photos to a listing before it goes on sale.
+     * POST /api/admin/items/{item_id}/photos
+     *
+     * A seller's snapshots are not always what the catalog should show, so
+     * once the item is in hand Ofelia can photograph it herself.
+     */
+    public function addPhotos(Request $request, $itemId)
+    {
+        $request->validate(['photos' => ['required']]);
+
+        return $this->withItem($itemId, function (Item $item) use ($request) {
+            $this->assertPhotosEditable($item);
+
+            $files = $request->file('photos');
+            $files = is_array($files) ? $files : [$files];
+
+            if ($error = $this->uploader->validateImages($files)) {
+                return response()->json($error, 422);
+            }
+
+            if ($item->photos->count() + count($files) > self::MAX_PHOTOS) {
+                return response()->json([
+                    'message' => 'A listing can have at most ' . self::MAX_PHOTOS . ' photos. Remove one first.',
+                ], 422);
+            }
+
+            if ($this->uploader->uploadMany($files, 'items', $item->item_id) === []) {
+                return response()->json(['message' => 'The photos could not be uploaded. Please try again.'], 500);
+            }
+
+            return $this->photoList($item, 'Photos added');
+        });
+    }
+
+    /**
+     * Remove one photo from a listing before it goes on sale.
+     * DELETE /api/admin/items/{item_id}/photos/{photo_id}
+     */
+    public function deletePhoto($itemId, $photoId)
+    {
+        return $this->withItem($itemId, function (Item $item) use ($photoId) {
+            $this->assertPhotosEditable($item);
+
+            $photo = $item->photos->firstWhere('photo_id', (int) $photoId);
+
+            if ($photo === null) {
+                return response()->json(['message' => 'Photo not found'], 404);
+            }
+
+            // The catalog card needs something to show.
+            if ($item->photos->count() <= 1) {
+                return response()->json([
+                    'message' => 'A listing needs at least one photo. Add another before removing this one.',
+                ], 422);
+            }
+
+            $photo->delete();
+
+            return $this->photoList($item, 'Photo removed');
+        });
+    }
+
+    /** The photos are the admin's to change only until the item is on sale. */
+    private function assertPhotosEditable(Item $item): void
+    {
+        if (!$item->isPending() && $item->status !== Item::STATUS_ACQUIRED) {
+            throw new RuntimeException('Photos can only be changed before the item is published.');
+        }
+    }
+
+    private function photoList(Item $item, string $message)
+    {
+        $photos = ItemPhoto::where('item_id', $item->item_id)
+            ->orderBy('photo_id')
+            ->get(['photo_id', 'photo_url']);
+
+        return response()->json([
+            'message' => $message,
+            'data' => $photos->map(fn (ItemPhoto $photo) => [
+                'photo_id' => $photo->photo_id,
+                'photo_url' => $photo->photo_url,
+            ])->values(),
+        ], 200);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────
