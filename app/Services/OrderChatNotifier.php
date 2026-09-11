@@ -117,6 +117,38 @@ class OrderChatNotifier
     }
 
     /**
+     * The buyer switched how they will pay, before paying anything.
+     *
+     * Posted as plain text: the order card already in the thread redraws
+     * itself from the live order, so it picks up the new method on its own.
+     */
+    public function paymentMethodChanged(Transaction $transaction, Item $item, User $buyer): void
+    {
+        $admin = $this->admin();
+
+        if ($admin === null) {
+            return;
+        }
+
+        $label = self::paymentMethodLabel($transaction);
+
+        $this->post(
+            $item,
+            $buyer,
+            $admin,
+            "I changed my payment method to {$label}.\n" . self::paymentStateSentence($transaction),
+        );
+
+        $this->fcm->sendOrderNotification(
+            $transaction,
+            $admin,
+            'order_update',
+            'Payment method changed',
+            "{$item->title} - now {$label}",
+        );
+    }
+
+    /**
      * Admin has decided on the order. The buyer is told in the same thread,
      * so the whole history of the purchase reads in one place.
      */
