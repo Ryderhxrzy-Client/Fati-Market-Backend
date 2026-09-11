@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\StudentInformation;
 use App\Models\User;
 use App\Services\GoogleIdentity;
-use Cloudinary\Cloudinary;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -87,7 +86,6 @@ class GoogleAuthController extends Controller
     {
         $validated = $request->validate([
             'id_token' => ['required', 'string'],
-            'profile_picture' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
         ]);
 
         try {
@@ -103,11 +101,10 @@ class GoogleAuthController extends Controller
         }
 
         try {
-            // Google already has a picture of them; uploading another is
-            // optional rather than a second thing to find.
-            $profileUrl = $request->hasFile('profile_picture')
-                ? $this->upload($request->file('profile_picture'), 'student_profiles')
-                : $identity['picture'];
+            // The identity token is the profile source of truth. It gives us
+            // the name and picture belonging to the account that just signed
+            // in, rather than accepting a photo from an unrelated device.
+            $profileUrl = $identity['picture'];
 
             $result = DB::transaction(function () use ($identity, $profileUrl) {
                 $user = User::create([
@@ -176,26 +173,4 @@ class GoogleAuthController extends Controller
         ];
     }
 
-    /** @throws RuntimeException when Cloudinary gives nothing back. */
-    private function upload($file, string $folder): string
-    {
-        $cloudinary = new Cloudinary([
-            'cloud' => [
-                'cloud_name' => config('services.cloudinary.cloud_name'),
-                'api_key' => config('services.cloudinary.key'),
-                'api_secret' => config('services.cloudinary.secret'),
-            ],
-        ]);
-
-        $result = $cloudinary->uploadApi()->upload($file->getRealPath(), [
-            'folder' => $folder,
-            'resource_type' => 'image',
-        ]);
-
-        if (!isset($result['secure_url'])) {
-            throw new RuntimeException('Failed to upload the photo.');
-        }
-
-        return $result['secure_url'];
-    }
 }
