@@ -168,6 +168,20 @@ class Transaction extends Model
         return $this->amountDueMoney()->isZero();
     }
 
+    /**
+     * Whether the buyer may still switch between cash and GCash.
+     *
+     * Only before anything has happened to the payment. Once a receipt is up,
+     * or Admin has approved a pay-at-the-store order, the method is what Admin
+     * is acting on.
+     */
+    public function canChangePaymentMethod(): bool
+    {
+        return $this->status === self::STATUS_PENDING_PAYMENT
+            && $this->payment_status === self::PAYMENT_UNPAID
+            && in_array($this->payment_method, [self::METHOD_CASH, self::METHOD_GCASH], true);
+    }
+
     public function hasExpired(): bool
     {
         return $this->reserved_until !== null
