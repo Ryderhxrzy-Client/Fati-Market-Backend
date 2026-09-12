@@ -241,8 +241,8 @@ class CheckoutController extends Controller
      * GET /api/checkout/payment-details
      *
      * There is no live GCash gateway. The buyer scans a static QR, pays, and
-     * uploads proof for Admin to verify by hand. The details come from config
-     * so Ofelia can change the account or QR without an app release.
+     * uploads proof for Admin to verify by hand. Saved admin settings supply
+     * the account and QR; config is only the initial fallback.
      */
     public function paymentDetails()
     {
@@ -250,9 +250,7 @@ class CheckoutController extends Controller
             'message' => 'Payment details retrieved successfully',
             'data' => [
                 'gcash' => [
-                    'account_name' => config('services.gcash.account_name'),
-                    'account_number' => config('services.gcash.account_number'),
-                    'qr_image_url' => config('services.gcash.qr_image_url'),
+                    ...\App\Models\PaymentSetting::gcashDetails(),
                     'instructions' => 'Scan the QR with your GCash app, send the exact '
                         . 'amount due, then upload the receipt screenshot and enter the '
                         . 'reference number below.',
@@ -261,7 +259,7 @@ class CheckoutController extends Controller
                     'instructions' => 'Pay at the store when you collect the item.',
                 ],
             ],
-        ], 200);
+        ], 200)->header('Cache-Control', 'no-store');
     }
 
     /**

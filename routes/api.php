@@ -137,6 +137,9 @@ Route::middleware('auth:sanctum')->group(function () {
      * transactions are all gated here by role, read from the token.
      */
     Route::middleware('admin')->group(function () {
+        Route::get('/admin/settings/gcash', [\App\Http\Controllers\Api\PaymentSettingsController::class, 'show']);
+        Route::post('/admin/settings/gcash', [\App\Http\Controllers\Api\PaymentSettingsController::class, 'update']);
+
         // Student management
         Route::prefix('admin/students')->group(function () {
             Route::get('/', [StudentManagementController::class, 'getAllStudents']);
