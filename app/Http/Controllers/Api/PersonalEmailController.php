@@ -32,6 +32,21 @@ class PersonalEmailController extends Controller
     {
     }
 
+    /** Status used by clients to choose setup vs. manage-password UI. */
+    public function status(Request $request)
+    {
+        $user = $request->user();
+        if ($user->personal_email === null) {
+            return response()->json(['personal_email_set' => false, 'password_set' => false], 404);
+        }
+        return response()->json([
+            'personal_email_set' => true,
+            'personal_email_verified' => $user->personal_email_verified_at !== null,
+            'password_set' => $user->password_set_at !== null && $user->personal_email_verified_at !== null,
+            'personal_email' => $user->personal_email,
+        ], 200);
+    }
+
     /**
      * Start linking or changing it.
      * POST /api/account/personal-email

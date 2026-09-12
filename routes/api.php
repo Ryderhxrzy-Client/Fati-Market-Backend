@@ -112,6 +112,7 @@ Route::middleware('auth:sanctum')->group(function () {
     // open session could point the recovery address at themselves.
     Route::prefix('account/personal-email')->group(function () {
         Route::post('/', [PersonalEmailController::class, 'request']);
+        Route::get('/status', [PersonalEmailController::class, 'status']);
         Route::post('/verify', [PersonalEmailController::class, 'verify']);
         Route::post('/password', [PersonalEmailController::class, 'password']);
         Route::post('/confirm', [PersonalEmailController::class, 'confirm']);
