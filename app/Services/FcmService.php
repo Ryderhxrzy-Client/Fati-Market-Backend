@@ -2,8 +2,8 @@
 
 namespace App\Services;
 
-use App\Models\Message;
 use App\Models\FcmDeviceToken;
+use App\Models\Message;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -12,41 +12,27 @@ class FcmService
     public function sendChatMessage(Message $message): void
     {
         $tokens = FcmDeviceToken::where('user_id', $message->receiver_id)->pluck('token')->all();
-        if (!$tokens) return;
+        if (! $tokens) {
+            return;
+        }
 
         $message->loadMissing(['sender.studentInfo', 'receiver.studentInfo', 'item']);
         $sender = $message->sender;
         $info = $sender?->studentInfo;
-        $name = trim(($info?->first_name ?? '') . ' ' . ($info?->last_name ?? '')) ?: ($sender?->email ?? 'New message');
+        $name = trim(($info?->first_name ?? '').' '.($info?->last_name ?? '')) ?: ($sender?->email ?? 'New message');
         $data = [
             'type' => 'chat_message',
             'message_id' => (string) $message->message_id,
             'item_id' => (string) $message->item_id,
             'item_title' => (string) ($message->item?->title ?? ''),
             'sender_id' => (string) $message->sender_id,
+            'recipient_id' => (string) $message->receiver_id,
             'sender_name' => $name,
             'sender_profile_picture' => (string) ($info?->profile_picture ?? ''),
             'message' => (string) $message->message,
         ];
 
-        foreach ($tokens as $token) {
-            try {
-                $response = Http::withToken($this->accessToken())
-                    ->post('https://fcm.googleapis.com/v1/projects/' . config('services.fcm.project_id') . '/messages:send', [
-                        'message' => [
-                            'token' => $token,
-                            'data' => $data,
-                            'android' => ['priority' => 'HIGH'],
-                        ],
-                    ]);
-                if ($response->status() === 404 || $response->status() === 400) {
-                    FcmDeviceToken::where('token', $token)->delete();
-                }
-                if (!$response->successful()) Log::warning('FCM send failed', ['status' => $response->status(), 'body' => $response->body()]);
-            } catch (\Throwable $e) {
-                Log::error('FCM exception', ['error' => $e->getMessage()]);
-            }
-        }
+        $this->sendToDevices($tokens, $data);
     }
 
     /**
@@ -69,12 +55,13 @@ class FcmService
     ): void {
         $tokens = FcmDeviceToken::where('user_id', $recipient->user_id)->pluck('token')->all();
 
-        if (!$tokens) {
+        if (! $tokens) {
             return;
         }
 
         $data = [
             'type' => $type,
+            'recipient_id' => (string) $recipient->user_id,
             'item_id' => (string) $item->item_id,
             'item_title' => (string) $item->title,
             'status' => (string) $item->status,
@@ -82,28 +69,7 @@ class FcmService
             'body' => $body,
         ];
 
-        foreach ($tokens as $token) {
-            try {
-                $response = Http::withToken($this->accessToken())
-                    ->post('https://fcm.googleapis.com/v1/projects/' . config('services.fcm.project_id') . '/messages:send', [
-                        'message' => [
-                            'token' => $token,
-                            'data' => $data,
-                            'android' => ['priority' => 'HIGH'],
-                        ],
-                    ]);
-
-                if ($response->status() === 404 || $response->status() === 400) {
-                    FcmDeviceToken::where('token', $token)->delete();
-                }
-
-                if (!$response->successful()) {
-                    Log::warning('FCM item send failed', ['status' => $response->status()]);
-                }
-            } catch (\Throwable $e) {
-                Log::error('FCM item exception', ['error' => $e->getMessage()]);
-            }
-        }
+        $this->sendToDevices($tokens, $data);
     }
 
     public function sendOrderNotification(
@@ -115,17 +81,18 @@ class FcmService
     ): void {
         $tokens = FcmDeviceToken::where('user_id', $recipient->user_id)->pluck('token')->all();
 
-        if (!$tokens) {
+        if (! $tokens) {
             return;
         }
 
         $transaction->loadMissing(['item', 'buyer.studentInfo']);
         $buyerInfo = $transaction->buyer?->studentInfo;
-        $buyerName = trim(($buyerInfo?->first_name ?? '') . ' ' . ($buyerInfo?->last_name ?? ''))
+        $buyerName = trim(($buyerInfo?->first_name ?? '').' '.($buyerInfo?->last_name ?? ''))
             ?: ($transaction->buyer?->email ?? 'A buyer');
 
         $data = [
             'type' => $type,
+            'recipient_id' => (string) $recipient->user_id,
             'transaction_id' => (string) $transaction->transaction_id,
             'item_id' => (string) $transaction->item_id,
             'item_title' => (string) ($transaction->item?->title ?? ''),
@@ -137,10 +104,23 @@ class FcmService
             'body' => $body,
         ];
 
-        foreach ($tokens as $token) {
+        $this->sendToDevices($tokens, $data);
+    }
+
+    private function sendToDevices(array $tokens, array $data): void
+    {
+        try {
+            $accessToken = $this->accessToken();
+        } catch (\Throwable $e) {
+            Log::error('FCM authentication failed', ['error' => $e->getMessage()]);
+
+            return;
+        }
+
+        foreach (array_unique($tokens) as $token) {
             try {
-                $response = Http::withToken($this->accessToken())
-                    ->post('https://fcm.googleapis.com/v1/projects/' . config('services.fcm.project_id') . '/messages:send', [
+                $response = Http::withToken($accessToken)->connectTimeout(5)->timeout(15)
+                    ->post('https://fcm.googleapis.com/v1/projects/'.config('services.fcm.project_id').'/messages:send', [
                         'message' => [
                             'token' => $token,
                             'data' => $data,
@@ -148,24 +128,31 @@ class FcmService
                         ],
                     ]);
 
-                if ($response->status() === 404 || $response->status() === 400) {
-                    FcmDeviceToken::where('token', $token)->delete();
+                // A malformed payload or missing project must not erase valid devices.
+                $errorCode = collect($response->json('error.details', []))
+                    ->firstWhere('@type', 'type.googleapis.com/google.firebase.fcm.v1.FcmError')['errorCode'] ?? null;
+                if ($errorCode === 'UNREGISTERED') {
+                    FcmDeviceToken::where('token_hash', hash('sha256', $token))->delete();
                 }
-
-                if (!$response->successful()) {
-                    Log::warning('FCM order send failed', ['status' => $response->status()]);
+                if (! $response->successful()) {
+                    Log::warning('FCM delivery failed', [
+                        'status' => $response->status(),
+                        'fcm_error' => $errorCode,
+                        'api_status' => $response->json('error.status'),
+                        'type' => $data['type'] ?? null,
+                    ]);
                 }
             } catch (\Throwable $e) {
-                Log::error('FCM order exception', ['error' => $e->getMessage()]);
+                Log::error('FCM delivery exception', ['error' => $e->getMessage()]);
             }
         }
     }
 
-    private function accessToken(): string
+    protected function accessToken(): string
     {
         $credentialsPath = app(FcmCredentials::class)->path();
         // Allow a portable Laravel-relative path such as storage/fati-market-credentials.json.
-        if (!preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/])/', $credentialsPath)) {
+        if (! preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/])/', $credentialsPath)) {
             $credentialsPath = base_path($credentialsPath);
         }
         $json = json_decode(file_get_contents($credentialsPath), true, 512, JSON_THROW_ON_ERROR);
@@ -175,11 +162,12 @@ class FcmService
             'iss' => $json['client_email'], 'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
             'aud' => 'https://oauth2.googleapis.com/token', 'iat' => $now, 'exp' => $now + 3600,
         ]);
-        openssl_sign($header . '.' . $claims, $signature, $json['private_key'], OPENSSL_ALGO_SHA256);
-        $jwt = $header . '.' . $claims . '.' . rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
+        openssl_sign($header.'.'.$claims, $signature, $json['private_key'], OPENSSL_ALGO_SHA256);
+        $jwt = $header.'.'.$claims.'.'.rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
         $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
             'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => $jwt,
         ])->throw();
+
         return $response->json('access_token');
     }
 

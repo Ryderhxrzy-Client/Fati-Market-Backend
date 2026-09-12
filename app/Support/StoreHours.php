@@ -70,7 +70,9 @@ class StoreHours
      */
     public static function refusalFor(Carbon $at, ?Carbon $now = null): ?string
     {
-        $now ??= Carbon::now();
+        $timezone = config('app.timezone');
+        $at = $at->copy()->setTimezone($timezone);
+        $now = ($now ?? Carbon::now($timezone))->copy()->setTimezone($timezone);
 
         if ($at->lessThanOrEqualTo($now)) {
             return 'That time has already passed. Pick a later time.';
@@ -88,6 +90,11 @@ class StoreHours
 
         if ($time < self::openTime() || $time >= self::closeTime()) {
             return 'Pick a time within store hours, ' . self::label() . '.';
+        }
+
+        $closing = $at->copy()->setTimeFromTimeString(self::closeTime());
+        if ($at->copy()->addMinutes(self::slotMinutes())->greaterThan($closing)) {
+            return 'The entire '.self::slotMinutes().'-minute meet-up must fit within store hours, '.self::label().'.';
         }
 
         return null;
