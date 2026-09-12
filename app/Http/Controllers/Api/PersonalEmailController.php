@@ -101,6 +101,20 @@ class PersonalEmailController extends Controller
         return response()->json(['message' => 'OTP verified successfully.'], 200);
     }
 
+    /** Set or change the password after the personal email is verified. */
+    public function password(Request $request)
+    {
+        $user = $request->user();
+        $data = $request->validate([
+            'password' => ['required', 'string', 'min:8', 'confirmed', 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/'],
+        ]);
+        if ($user->personal_email === null || $user->personal_email_verified_at === null) {
+            return response()->json(['message' => 'Verify your personal email before setting a password.'], 422);
+        }
+        $user->update(['password' => Hash::make($data['password']), 'password_set_at' => now()]);
+        return response()->json(['message' => 'Personal email password saved successfully.'], 200);
+    }
+
     /**
      * Finish it with the code that was sent.
      * POST /api/account/personal-email/confirm
