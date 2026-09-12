@@ -9,6 +9,7 @@ use App\Services\GoogleIdentity;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 /**
@@ -66,6 +67,26 @@ class PersonalEmailController extends Controller
             'message' => "We sent a 6-digit code to {$address}. Enter it to finish linking.",
             'data' => ['personal_email' => $address],
         ], 200);
+    }
+
+    /** Validate an OTP without consuming it or linking the email. */
+    public function verify(Request $request)
+    {
+        $data = $request->validate([
+            'personal_email' => ['required', 'email'],
+            'code' => ['required', 'digits:6'],
+        ]);
+        $email = strtolower(trim($data['personal_email']));
+        $row = DB::table('email_verification_codes')->where('email', $email)->first();
+        if ($row === null) return response()->json(['message' => 'Ask for a code first.'], 422);
+        if (now()->diffInMinutes($row->created_at) >= EmailVerification::CODE_MINUTES) {
+            return response()->json(['message' => 'That code has expired. Ask for a new one.'], 422);
+        }
+        if ((int) $row->attempts >= 6 || !Hash::check($data['code'], $row->code)) {
+            DB::table('email_verification_codes')->where('email', $email)->increment('attempts');
+            return response()->json(['message' => 'That OTP is incorrect.'], 422);
+        }
+        return response()->json(['message' => 'OTP verified successfully.'], 200);
     }
 
     /**
