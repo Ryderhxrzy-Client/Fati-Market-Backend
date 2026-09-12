@@ -61,6 +61,13 @@ class PersonalEmailController extends Controller
             ], 422);
         }
 
+        // Persist the proposed address immediately, but keep it unusable for
+        // login until the OTP is verified.
+        $user->update([
+            'personal_email' => $address,
+            'personal_email_verified_at' => null,
+        ]);
+
         $this->verification->send($address, $user->studentInfo?->first_name ?? 'there');
 
         return response()->json([
@@ -86,6 +93,11 @@ class PersonalEmailController extends Controller
             DB::table('email_verification_codes')->where('email', $email)->increment('attempts');
             return response()->json(['message' => 'That OTP is incorrect.'], 422);
         }
+        $request->user()->update([
+            'personal_email' => $email,
+            'personal_email_verified_at' => now(),
+        ]);
+        DB::table('email_verification_codes')->where('email', $email)->delete();
         return response()->json(['message' => 'OTP verified successfully.'], 200);
     }
 
