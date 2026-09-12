@@ -37,14 +37,27 @@ class StoreHoursSettingsController extends Controller
         $days = array_values(array_unique(array_map('intval', $data['open_days'])));
         sort($days);
 
-        StoreHoursSetting::updateOrCreate(['id' => 1], [
+        $values = [
             'open_time' => $data['open_time'],
             'close_time' => $data['close_time'],
             'open_days' => implode(',', $days),
             'slot_minutes' => $data['slot_minutes'],
+        ];
+        $current = StoreHoursSetting::query()->find(1);
+        if ($current !== null &&
+            $current->open_time === $values['open_time'] &&
+            $current->close_time === $values['close_time'] &&
+            $current->open_days === $values['open_days'] &&
+            (int) $current->slot_minutes === (int) $values['slot_minutes']) {
+            return response()->json([
+                'message' => 'No changes detected. These store hours are already saved.',
+                'errors' => ['store_hours' => ['No changes detected. These values are already saved.']],
+            ], 422);
+        }
+
+        StoreHoursSetting::updateOrCreate(['id' => 1], $values + [
             'updated_by' => $request->user()->user_id,
         ]);
-        StoreHours::forgetSavedSettings();
 
         return response()->json([
             'message' => 'Store hours saved.',
