@@ -36,6 +36,9 @@ class PersonalEmailController extends Controller
     public function status(Request $request)
     {
         $user = $request->user();
+        if ($user === null) {
+            return response()->json(['message' => 'Unauthenticated.'], 401);
+        }
         if ($user->personal_email === null) {
             return response()->json(['personal_email_set' => false, 'password_set' => false], 404);
         }
