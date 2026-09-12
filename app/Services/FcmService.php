@@ -13,9 +13,18 @@ class FcmService
     {
         $tokens = FcmDeviceToken::where('user_id', $message->receiver_id)->pluck('token')->all();
         if (! $tokens) {
+            Log::warning('Chat push skipped: recipient has no registered devices', [
+                'recipient_id' => $message->receiver_id, 'message_id' => $message->message_id,
+            ]);
+
             return;
         }
 
+        $this->sendToDevices($tokens, self::chatData($message));
+    }
+
+    public static function chatData(Message $message): array
+    {
         $message->loadMissing(['sender.studentInfo', 'receiver.studentInfo', 'item']);
         $sender = $message->sender;
         $info = $sender?->studentInfo;
@@ -29,10 +38,10 @@ class FcmService
             'recipient_id' => (string) $message->receiver_id,
             'sender_name' => $name,
             'sender_profile_picture' => (string) ($info?->profile_picture ?? ''),
-            'message' => (string) $message->message,
+            'message' => mb_strcut((string) $message->message, 0, 1800, 'UTF-8'),
         ];
 
-        $this->sendToDevices($tokens, $data);
+        return $data;
     }
 
     /**
@@ -120,7 +129,7 @@ class FcmService
         foreach (array_unique($tokens) as $token) {
             try {
                 $response = Http::withToken($accessToken)->connectTimeout(5)->timeout(15)
-                    ->post('https://fcm.googleapis.com/v1/projects/'.config('services.fcm.project_id').'/messages:send', [
+                    ->post('https://fcm.googleapis.com/v1/projects/'.app(FcmCredentials::class)->projectId().'/messages:send', [
                         'message' => [
                             'token' => $token,
                             'data' => $data,
@@ -134,12 +143,16 @@ class FcmService
                 if ($errorCode === 'UNREGISTERED') {
                     FcmDeviceToken::where('token_hash', hash('sha256', $token))->delete();
                 }
+                if ($response->successful()) {
+                    Log::info('FCM delivery accepted', ['recipient_id' => $data['recipient_id'] ?? null, 'type' => $data['type'] ?? null]);
+                }
                 if (! $response->successful()) {
                     Log::warning('FCM delivery failed', [
                         'status' => $response->status(),
                         'fcm_error' => $errorCode,
                         'api_status' => $response->json('error.status'),
                         'type' => $data['type'] ?? null,
+                        'recipient_id' => $data['recipient_id'] ?? null,
                     ]);
                 }
             } catch (\Throwable $e) {
@@ -150,21 +163,18 @@ class FcmService
 
     protected function accessToken(): string
     {
-        $credentialsPath = app(FcmCredentials::class)->path();
-        // Allow a portable Laravel-relative path such as storage/fati-market-credentials.json.
-        if (! preg_match('/^(?:[A-Za-z]:[\\\\\/]|[\\\\\/])/', $credentialsPath)) {
-            $credentialsPath = base_path($credentialsPath);
-        }
-        $json = json_decode(file_get_contents($credentialsPath), true, 512, JSON_THROW_ON_ERROR);
+        $json = app(FcmCredentials::class)->data();
         $now = time();
         $header = $this->encode(['alg' => 'RS256', 'typ' => 'JWT']);
         $claims = $this->encode([
             'iss' => $json['client_email'], 'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
             'aud' => 'https://oauth2.googleapis.com/token', 'iat' => $now, 'exp' => $now + 3600,
         ]);
-        openssl_sign($header.'.'.$claims, $signature, $json['private_key'], OPENSSL_ALGO_SHA256);
+        if (! openssl_sign($header.'.'.$claims, $signature, $json['private_key'], OPENSSL_ALGO_SHA256)) {
+            throw new \RuntimeException('Unable to sign Firebase authentication request.');
+        }
         $jwt = $header.'.'.$claims.'.'.rtrim(strtr(base64_encode($signature), '+/', '-_'), '=');
-        $response = Http::asForm()->post('https://oauth2.googleapis.com/token', [
+        $response = Http::asForm()->connectTimeout(5)->timeout(15)->post('https://oauth2.googleapis.com/token', [
             'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer', 'assertion' => $jwt,
         ])->throw();
 

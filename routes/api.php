@@ -57,6 +57,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/device-tokens', [FcmDeviceTokenController::class, 'store']);
     Route::delete('/device-tokens', [FcmDeviceTokenController::class, 'destroy']);
 
+    Route::get('/notifications/chat', [\App\Http\Controllers\Api\ChatNotificationsController::class, 'index']);
+
     // Profile routes
     Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
     Route::get('/wallet', [AuthController::class, 'getWalletBalance']);

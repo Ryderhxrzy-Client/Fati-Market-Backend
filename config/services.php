@@ -39,6 +39,7 @@ return [
         'project_id' => env('FCM_PROJECT_ID'),
         'credentials' => env('FCM_CREDENTIALS', 'storage/fati-market-credentials.json'),
         'credentials_base64' => env('FCM_SERVICE_ACCOUNT_JSON_BASE64'),
+        'credentials_json' => env('FCM_SERVICE_ACCOUNT_JSON'),
     ],
 
     /*
