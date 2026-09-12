@@ -57,6 +57,7 @@ class EmailVerification
             // problem rather than a failed registration - it is logged, and
             // the student can ask for another one.
             Log::error('Failed to send a verification code', ['error' => $e->getMessage()]);
+            throw new RuntimeException('Verification email could not be sent. Check the mail server configuration and try again.');
         }
     }
 
