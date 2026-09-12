@@ -6,6 +6,8 @@ use App\Models\Item;
 use App\Models\User;
 use App\Support\LoyaltyRules;
 use App\Support\Money;
+use App\Support\StoreHours;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -47,6 +49,15 @@ class ItemLifecycleService
     /** Note the agreed meeting / physical turnover schedule. */
     public function setMeetupSchedule(Item $item, ?string $schedule): Item
     {
+        if ($schedule !== null) {
+            $at = Carbon::parse($schedule, config('app.timezone'))->setTimezone(config('app.timezone'));
+            if ($refusal = StoreHours::refusalFor($at)) {
+                throw new RuntimeException($refusal);
+            }
+            // Persist the same store-local time that was checked, including ISO/UTC inputs.
+            $schedule = $at->format('Y-m-d H:i:s');
+        }
+
         $item->update(['meetup_schedule' => $schedule]);
 
         return $item->fresh();

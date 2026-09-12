@@ -148,4 +148,47 @@ class MeetupScheduleTest extends MarketplaceTestCase
 
         $this->assertNull($this->item->fresh()->meetup_schedule);
     }
+
+    #[Test]
+    public function a_slot_that_runs_past_closing_is_refused_without_changing_the_booking(): void
+    {
+        $this->book('2026-09-10 16:30:00')->assertOk();
+        foreach (['16:30:01', '16:31:00', '16:59:00', '17:00:00', '18:00:00'] as $time) {
+            $this->book('2026-09-10 '.$time)->assertStatus(422)->assertJsonValidationErrors('meetup_schedule');
+            $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
+        }
+    }
+
+    #[Test]
+    public function custom_slot_duration_must_fit_before_closing(): void
+    {
+        config(['store.close_time' => '17:15', 'store.slot_minutes' => 60]);
+        $this->book('2026-09-10 16:15:00')->assertOk();
+        $this->book('2026-09-10 16:15:01')->assertStatus(422);
+    }
+
+    #[Test]
+    public function timezone_inputs_are_checked_and_saved_in_store_local_time(): void
+    {
+        $this->book('2026-09-10T08:30:00Z')->assertOk();
+        $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
+        $this->book('2026-09-10T09:00:00Z')->assertStatus(422);
+        $this->book('2026-09-10T16:00:00-04:00')->assertStatus(422);
+    }
+
+    #[Test]
+    public function after_closing_today_only_a_future_open_slot_can_be_booked(): void
+    {
+        $this->travelTo(Carbon::parse('2026-09-09 18:00:00'));
+        $this->book('2026-09-09 16:30:00')->assertStatus(422);
+        $this->book('2026-09-09 18:30:00')->assertStatus(422);
+        $this->book('2026-09-10 08:00:00')->assertOk();
+    }
+
+    #[Test]
+    public function direct_service_calls_cannot_bypass_store_hours(): void
+    {
+        $this->expectException(\RuntimeException::class);
+        app(\App\Services\ItemLifecycleService::class)->setMeetupSchedule($this->item, '2026-09-10 18:00:00');
+    }
 }
