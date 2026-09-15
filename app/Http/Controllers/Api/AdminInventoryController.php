@@ -309,6 +309,25 @@ class AdminInventoryController extends Controller
                 }
             }
 
+            // A photograph of the seller being paid is the payout itself: the
+
+
+            // cash changed hands at the counter, so the item must not keep
+
+
+            // asking for a "Pay seller" step that already happened.
+
+
+            if ($request->hasFile('payout_photo')) {
+
+
+                $item = $this->lifecycle->recordSellerPayout($item->fresh(), $request->user(), $payout);
+
+
+            }
+
+
+
             $item = $item->fresh(['photos', 'seller']);
 
             // Posted last, once the proof photos are stored, so the seller's
@@ -618,8 +637,11 @@ class AdminInventoryController extends Controller
     /** The photos are the admin's to change only until the item is on sale. */
     private function assertPhotosEditable(Item $item): void
     {
-        if (!$item->isPending() && $item->status !== Item::STATUS_ACQUIRED) {
-            throw new RuntimeException('Photos can only be changed before the item is published.');
+        // Ofelia keeps curating the pictures while the item is hers to sell:
+        // an offer, stock on the shelf, or a live listing. Only a finished
+        // sale and a rejected offer are frozen.
+        if (in_array($item->status, [Item::STATUS_SOLD, Item::STATUS_REJECTED], true)) {
+            throw new RuntimeException('Photos can no longer be changed once the item is sold or rejected.');
         }
     }
 

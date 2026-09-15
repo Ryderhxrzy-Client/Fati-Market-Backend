@@ -147,6 +147,12 @@ class SellerTurnoverTest extends MarketplaceTestCase
         $this->assertNotNull($response->json('data.turnover_photo'));
         $this->assertNotNull($response->json('data.seller_payout_photo'));
 
+        // The photo of the seller being paid is the payout: nothing is left
+        // to "Pay seller" afterwards.
+        $this->assertSame(Item::PAYOUT_PAID, $response->json('data.seller_payout_status'));
+        $this->assertSame('250.00', $response->json('data.seller_payout_amount'));
+        $this->assertNotNull($item->fresh()->seller_paid_at);
+
         // Acquired: the turnover code has done its job.
         $this->assertNull($response->json('data.qr_code'));
     }
