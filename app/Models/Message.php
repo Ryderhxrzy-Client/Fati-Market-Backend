@@ -68,6 +68,7 @@ class Message extends Model
         'transaction_id',
         'payment_status_at',
         'order_status_at',
+        'reply_to_message_id',
         'sent_at',
         'is_read',
     ];
@@ -108,6 +109,48 @@ class Message extends Model
     public function transaction()
     {
         return $this->belongsTo(Transaction::class, 'transaction_id', 'transaction_id');
+    }
+
+    /** The line this one answers, when it is a reply. */
+    public function replyTo()
+    {
+        return $this->belongsTo(Message::class, 'reply_to_message_id', 'message_id');
+    }
+
+    /**
+     * The quote a client draws above a reply: who said it and, for a card,
+     * what the card was, since a card has no sentence to quote.
+     */
+    public function replyPreview(): ?array
+    {
+        $quoted = $this->replyTo;
+
+        if ($quoted === null) {
+            return null;
+        }
+
+        $quoted->loadMissing('sender.studentInfo');
+        $info = $quoted->sender?->studentInfo;
+        $name = trim(($info?->first_name ?? '').' '.($info?->last_name ?? '')) ?: ($quoted->sender?->email ?? '');
+        $kind = $quoted->kind ?? self::KIND_TEXT;
+
+        $text = match ($kind) {
+            self::KIND_TEXT => (string) $quoted->message,
+            self::KIND_ORDER_PLACED => 'Order placed',
+            self::KIND_PAYMENT_SUBMITTED => 'Payment sent',
+            self::KIND_ORDER_UPDATE => 'Order update',
+            self::KIND_ITEM_LISTED => 'Item offer',
+            self::KIND_ITEM_ACQUIRED => 'Item received',
+            default => (string) $quoted->message,
+        };
+
+        return [
+            'message_id' => (int) $quoted->message_id,
+            'sender_id' => (int) $quoted->sender_id,
+            'sender_name' => $name,
+            'kind' => $kind,
+            'message' => mb_strimwidth($text, 0, 200, '…', 'UTF-8'),
+        ];
     }
 
     /** True when a client should draw this as an order card. */
