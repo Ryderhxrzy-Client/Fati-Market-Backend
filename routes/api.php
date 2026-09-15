@@ -75,6 +75,9 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('conversations')->group(function () {
         Route::get('/', [MessagesController::class, 'getConversations']);
         Route::get('/{user_id}', [MessagesController::class, 'getConversationWithUser']);
+        // Per-person housekeeping of one thread: name, pin, archive, clear.
+        Route::patch('/{item_id}/{user_id}', [MessagesController::class, 'updateConversation']);
+        Route::delete('/{item_id}/{user_id}', [MessagesController::class, 'clearConversation']);
     });
 
     // Protected items routes (student seller)
