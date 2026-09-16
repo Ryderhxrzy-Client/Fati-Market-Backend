@@ -404,15 +404,19 @@ class TransactionController extends Controller
      * Resolve a scanned order QR to the order itself.
      * GET /api/admin/transactions/scan?code=FMQR1.12.abcdef
      *
-     * The signature inside the code is checked before anything is looked up,
-     * so a hand-typed or tampered code answers 404 rather than leaking whether
-     * an order number exists.
+     * The signature inside a QR code is checked before anything is looked up,
+     * so a tampered code answers 404 rather than leaking whether an order
+     * number exists. The receipt number the buyer sees ("FM-000012") and the
+     * bare order number are accepted too: this endpoint is admin-only, and
+     * the counter has to work when the buyer reads the number off a receipt
+     * instead of showing the QR.
      */
     public function scan(Request $request)
     {
         $request->validate(['code' => ['required', 'string', 'max:64']]);
 
-        $transactionId = OrderQr::transactionIdFrom($request->query('code'));
+        $code = trim((string) $request->query('code'));
+        $transactionId = OrderQr::transactionIdFrom($code) ?? self::receiptNumberId($code);
 
         if ($transactionId === null) {
             return response()->json(['message' => 'This is not a Fati Market order code.'], 404);
@@ -426,6 +430,16 @@ class TransactionController extends Controller
                 ),
             ], 200);
         });
+    }
+
+    /** "FM-000012", "fm 12" or "12" -> 12; anything else -> null. */
+    private static function receiptNumberId(string $code): ?int
+    {
+        if (preg_match('/^(?:FM[\s-]*)?0*(\d{1,10})$/i', $code, $m) !== 1) {
+            return null;
+        }
+
+        return (int) $m[1];
     }
 
     /**

@@ -337,5 +337,7 @@ class OrderChatCardTest extends MarketplaceTestCase
         $this->assertNotNull($card['item_card']['turnover_photo']);
         $this->assertNotNull($card['item_card']['seller_payout_photo']);
         $this->assertSame('180.00', $card['item_card']['seller_payout_amount']);
+        // ...and the payment they were photographed receiving is on record.
+        $this->assertSame('paid', $card['item_card']['seller_payout_status']);
     }
 }

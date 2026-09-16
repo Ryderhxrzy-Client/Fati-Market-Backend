@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Http\Resources\TransactionPresenter;
+use App\Models\ConversationSetting;
 use App\Models\Item;
 use App\Models\Message;
 use App\Models\User;
@@ -25,7 +26,32 @@ class MessagesController extends Controller
             $validated = $request->validate([
                 'receiver_id' => ['required', 'integer', 'exists:users,user_id'],
                 'message' => ['required', 'string', 'max:1000'],
+                'reply_to_message_id' => ['sometimes', 'nullable', 'integer'],
             ]);
+
+            // A reply may only quote a line of this same thread - this item,
+            // between these two people - so nobody can surface a message
+            // they were never party to by quoting its id.
+            $replyToId = $validated['reply_to_message_id'] ?? null;
+
+            if ($replyToId !== null) {
+                $me = $request->user()->user_id;
+                $them = (int) $validated['receiver_id'];
+                $quoted = Message::where('message_id', $replyToId)
+                    ->where('item_id', $itemId)
+                    ->where(function ($q) use ($me, $them) {
+                        $q->where(fn ($w) => $w->where('sender_id', $me)->where('receiver_id', $them))
+                            ->orWhere(fn ($w) => $w->where('sender_id', $them)->where('receiver_id', $me));
+                    })
+                    ->first();
+
+                if ($quoted === null) {
+                    return response()->json([
+                        'message' => 'The message being replied to is not part of this conversation.',
+                        'errors' => ['reply_to_message_id' => ['Not part of this conversation.']],
+                    ], 422);
+                }
+            }
 
             // Check if receiver exists
             $receiver = User::where('user_id', $validated['receiver_id'])->first();
@@ -41,11 +67,19 @@ class MessagesController extends Controller
                 'sender_id' => $request->user()->user_id,
                 'receiver_id' => $validated['receiver_id'],
                 'message' => $validated['message'],
+                'reply_to_message_id' => $replyToId,
                 'sent_at' => now(),
             ]);
 
             // Reload message with relationships
-            $newMessage->load(['sender.studentInfo', 'receiver.studentInfo', 'item']);
+            $newMessage->load(['sender.studentInfo', 'receiver.studentInfo', 'item', 'replyTo.sender.studentInfo']);
+
+            // Writing into an archived thread is how it comes back to the inbox.
+            ConversationSetting::where('user_id', $request->user()->user_id)
+                ->where('item_id', $itemId)
+                ->where('other_user_id', $validated['receiver_id'])
+                ->where('is_archived', true)
+                ->update(['is_archived' => false]);
 
             // Push the same chat content to the receiver's registered devices.
             app(FcmService::class)->sendChatMessage($newMessage);
@@ -70,6 +104,7 @@ class MessagesController extends Controller
                     'kind' => $newMessage->kind ?? Message::KIND_TEXT,
                     'transaction_id' => null,
                     'order' => null,
+                    'reply_to' => $newMessage->replyPreview(),
                     'sent_at' => $newMessage->sent_at,
                 ]
             ], 201);
@@ -138,7 +173,21 @@ class MessagesController extends Controller
                 // order itself - its live payment status included.
                 'transaction.item.photos',
                 'transaction.buyer.studentInfo',
+                'replyTo.sender.studentInfo',
             ])->where('item_id', $itemId);
+
+            // "Delete for me": everything before the clearing stays hidden for
+            // this person, and only for them.
+            if ($otherUserId) {
+                $clearedAt = ConversationSetting::where('user_id', $userId)
+                    ->where('item_id', $itemId)
+                    ->where('other_user_id', $otherUserId)
+                    ->value('cleared_at');
+
+                if ($clearedAt !== null) {
+                    $messageQuery->where('sent_at', '>', $clearedAt);
+                }
+            }
 
             if ($otherUserId) {
                 $messageQuery->where(function ($query) use ($userId, $otherUserId) {
@@ -210,6 +259,7 @@ class MessagesController extends Controller
                         'item_card' => in_array($msg->kind ?? '', Message::ITEM_KINDS, true)
                             ? $itemCard
                             : null,
+                        'reply_to' => $msg->replyPreview(),
                         'sent_at' => $msg->sent_at,
                     ];
                 });
@@ -237,6 +287,10 @@ class MessagesController extends Controller
     {
         try {
             $userId = $request->user()->user_id;
+
+            // This person's own pins, names and clearings, keyed by thread.
+            $settings = ConversationSetting::where('user_id', $userId)->get()
+                ->keyBy(fn ($row) => $row->other_user_id.'_'.$row->item_id);
 
             // Get all users this user has messaged (as sender or receiver)
             $conversations = Message::where('sender_id', $userId)
@@ -270,7 +324,18 @@ class MessagesController extends Controller
                     $otherUserId = $message->sender_id === $userId ? $message->receiver_id : $message->sender_id;
                     return $otherUserId . '_' . $message->item_id;
                 })
-                ->map(function ($messages, $groupKey) use ($userId) {
+                ->map(function ($messages, $groupKey) use ($userId, $settings) {
+                    $setting = $settings->get($groupKey);
+
+                    // A cleared thread shows only what arrived after the clearing.
+                    if ($setting?->cleared_at !== null) {
+                        $messages = $messages->filter(fn ($m) => $m->sent_at !== null && \Carbon\Carbon::parse($m->sent_at)->gt($setting->cleared_at));
+
+                        if ($messages->isEmpty()) {
+                            return null;
+                        }
+                    }
+
                     $latestMessage = $messages->first();
                     $otherUser = $latestMessage->sender_id === $userId ? $latestMessage->receiver : $latestMessage->sender;
 
@@ -295,8 +360,19 @@ class MessagesController extends Controller
                         'last_message_at' => $latestMessage->sent_at,
                         'message_count' => $messages->count(),
                         'unread_count' => $unreadCount,
+                        'custom_name' => $setting?->custom_name,
+                        'is_pinned' => (bool) ($setting?->is_pinned ?? false),
+                        'pinned_at' => $setting?->pinned_at,
+                        'is_archived' => (bool) ($setting?->is_archived ?? false),
                     ];
                 })
+                ->filter()
+                // Pinned threads first, newest pin on top; then by recency.
+                ->sortBy([
+                    fn ($a, $b) => ($b['is_pinned'] <=> $a['is_pinned'])
+                        ?: (strcmp((string) $b['pinned_at'], (string) $a['pinned_at']))
+                        ?: (strcmp((string) $b['last_message_at'], (string) $a['last_message_at'])),
+                ])
                 ->values();
 
             return response()->json([
@@ -377,6 +453,92 @@ class MessagesController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * Name, pin or archive one thread - for this person only.
+     * PATCH /api/conversations/{item_id}/{user_id}
+     */
+    public function updateConversation(Request $request, $itemId, $otherUserId)
+    {
+        $validated = $request->validate([
+            'custom_name' => ['sometimes', 'nullable', 'string', 'max:80'],
+            'is_pinned' => ['sometimes', 'boolean'],
+            'is_archived' => ['sometimes', 'boolean'],
+        ]);
+
+        $userId = $request->user()->user_id;
+
+        if (!$this->threadExists($userId, (int) $itemId, (int) $otherUserId)) {
+            return response()->json(['message' => 'Conversation not found'], 404);
+        }
+
+        $setting = ConversationSetting::forThread($userId, (int) $itemId, (int) $otherUserId);
+
+        if (array_key_exists('custom_name', $validated)) {
+            $name = trim((string) $validated['custom_name']);
+            $setting->custom_name = $name === '' ? null : $name;
+        }
+
+        if (array_key_exists('is_pinned', $validated)) {
+            $setting->is_pinned = (bool) $validated['is_pinned'];
+            $setting->pinned_at = $setting->is_pinned ? now() : null;
+        }
+
+        if (array_key_exists('is_archived', $validated)) {
+            $setting->is_archived = (bool) $validated['is_archived'];
+
+            // An archived thread is out of the way; a pin would contradict that.
+            if ($setting->is_archived) {
+                $setting->is_pinned = false;
+                $setting->pinned_at = null;
+            }
+        }
+
+        $setting->save();
+
+        return response()->json([
+            'message' => 'Conversation updated',
+            'data' => $setting->toClientArray(),
+        ]);
+    }
+
+    /**
+     * "Delete for me": hide everything so far, for this person only. The
+     * other side keeps the thread, and it comes back here with whatever
+     * arrives next.
+     * DELETE /api/conversations/{item_id}/{user_id}
+     */
+    public function clearConversation(Request $request, $itemId, $otherUserId)
+    {
+        $userId = $request->user()->user_id;
+
+        if (!$this->threadExists($userId, (int) $itemId, (int) $otherUserId)) {
+            return response()->json(['message' => 'Conversation not found'], 404);
+        }
+
+        $setting = ConversationSetting::forThread($userId, (int) $itemId, (int) $otherUserId);
+        $setting->cleared_at = now();
+        $setting->is_pinned = false;
+        $setting->pinned_at = null;
+        $setting->is_archived = false;
+        $setting->save();
+
+        return response()->json([
+            'message' => 'Conversation deleted',
+            'data' => $setting->toClientArray(),
+        ]);
+    }
+
+    /** Whether these two people have ever exchanged a message about this item. */
+    private function threadExists(int $userId, int $itemId, int $otherUserId): bool
+    {
+        return Message::where('item_id', $itemId)
+            ->where(function ($q) use ($userId, $otherUserId) {
+                $q->where(fn ($w) => $w->where('sender_id', $userId)->where('receiver_id', $otherUserId))
+                    ->orWhere(fn ($w) => $w->where('sender_id', $otherUserId)->where('receiver_id', $userId));
+            })
+            ->exists();
     }
 
     /**

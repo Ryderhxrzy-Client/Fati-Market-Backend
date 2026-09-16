@@ -90,13 +90,32 @@ class AdminItemPhotosTest extends MarketplaceTestCase
     }
 
     #[Test]
-    public function a_published_item_keeps_its_photos(): void
+    public function a_published_listing_can_still_change_its_photos(): void
     {
+        // Ofelia retakes a picture after the item is on sale: the listing
+        // stays up while the photos change under it.
         $item = $this->itemWithPhotos(2, Item::STATUS_PUBLIC);
+
+        $this->add($item, [UploadedFile::fake()->image('retake.jpg')])
+            ->assertOk()
+            ->assertJsonCount(3, 'data');
+
+        $this->actingAs($this->admin)
+            ->deleteJson("/api/admin/items/{$item->item_id}/photos/{$item->photos()->first()->photo_id}")
+            ->assertOk();
+
+        $this->assertSame(2, $item->photos()->count());
+        $this->assertSame(Item::STATUS_PUBLIC, $item->fresh()->status);
+    }
+
+    #[Test]
+    public function a_sold_item_keeps_its_photos(): void
+    {
+        $item = $this->itemWithPhotos(2, Item::STATUS_SOLD);
 
         $this->add($item, [UploadedFile::fake()->image('late.jpg')])
             ->assertStatus(422)
-            ->assertJsonPath('message', 'Photos can only be changed before the item is published.');
+            ->assertJsonPath('message', 'Photos can no longer be changed once the item is sold or rejected.');
 
         $this->actingAs($this->admin)
             ->deleteJson("/api/admin/items/{$item->item_id}/photos/{$item->photos()->first()->photo_id}")
