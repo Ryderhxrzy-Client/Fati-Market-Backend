@@ -225,4 +225,53 @@ class AdminInventoryTest extends MarketplaceTestCase
             ->assertJsonPath('data.public_price', '250.00')
             ->assertJsonPath('data.reward_points', 2);
     }
+
+    #[Test]
+    public function a_selling_price_set_at_the_counter_is_kept_without_publishing(): void
+    {
+        // The counter decides a price on the turnover screen and may still
+        // hold the item back from the catalog. That price used to be thrown
+        // away, because only a published item could carry one.
+        $item = Item::factory()->acquired('180')->for($this->student(), 'seller')->create();
+
+        $this->actingAs($this->admin())
+            ->putJson("/api/admin/items/{$item->item_id}", ['public_price' => '350'])
+            ->assertOk()
+            ->assertJsonPath('data.public_price', '350.00')
+            ->assertJsonPath('data.markup', '170.00')
+            ->assertJsonPath('data.status', Item::STATUS_ACQUIRED);
+
+        $this->assertSame('350.00', $item->fresh()->public_price);
+    }
+
+    #[Test]
+    public function a_price_and_a_status_sent_together_are_both_applied(): void
+    {
+        $item = Item::factory()->acquired('180')->for($this->student(), 'seller')->create();
+
+        $this->actingAs($this->admin())
+            ->putJson("/api/admin/items/{$item->item_id}", [
+                'public_price' => '350',
+                'status' => Item::STATUS_RESERVED,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.public_price', '350.00')
+            ->assertJsonPath('data.status', Item::STATUS_RESERVED);
+
+        $fresh = $item->fresh();
+        $this->assertSame('350.00', $fresh->public_price);
+        $this->assertSame(Item::STATUS_RESERVED, $fresh->status);
+    }
+
+    #[Test]
+    public function a_selling_price_of_zero_is_still_refused_without_a_status(): void
+    {
+        $item = Item::factory()->acquired('180')->for($this->student(), 'seller')->create();
+
+        $this->actingAs($this->admin())
+            ->putJson("/api/admin/items/{$item->item_id}", ['public_price' => '0'])
+            ->assertStatus(422);
+
+        $this->assertNull($item->fresh()->public_price);
+    }
 }
