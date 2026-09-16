@@ -5,7 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Models\Item;
+use App\Models\ConversationEvent;
+use App\Models\ConversationSetting;
 use App\Models\ItemPhoto;
+use App\Models\Message;
+use App\Models\Transaction;
 use App\Services\ItemLifecycleService;
 use App\Services\OrderChatNotifier;
 use App\Services\PhotoUploader;
@@ -14,6 +18,7 @@ use App\Support\Money;
 use App\Support\StoreHours;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
@@ -563,6 +568,63 @@ class AdminInventoryController extends Controller
                 'message' => 'Admin: Item updated successfully',
                 'data' => ItemPresenter::forAdmin($item->fresh(['photos', 'seller'])),
                 'updated_by_admin' => $request->user()->user_id,
+            ], 200);
+        });
+    }
+
+    /**
+     * Delete an offer outright.
+     * DELETE /api/admin/items/{item_id}
+     *
+     * For the offers nobody should have to live with: a duplicate, a test
+     * upload, a listing a student abandoned. Admin only, and deliberately
+     * narrow - once the store has taken the item in, the row is part of the
+     * inventory and its history, so it is unpublished or rejected rather than
+     * erased. An item with an order against it can never go, because a
+     * transaction that points at nothing is worse than a stale listing.
+     *
+     * What goes with it is what only existed for it: its photos, the thread
+     * about it, the favourites and reservations pointing at it. The points
+     * ledger is left alone - it is a financial record, not a listing detail.
+     */
+    public function destroy(Request $request, $itemId)
+    {
+        return $this->withItem($itemId, function (Item $item) use ($request) {
+            if ($item->isTurnoverVerified() || !in_array($item->status, [Item::STATUS_PENDING, Item::STATUS_LEGACY_PRIVATE, Item::STATUS_REJECTED], true)) {
+                return response()->json([
+                    'message' => "This item is already part of the store's inventory, so it cannot be deleted. Unpublish it or reject the offer instead.",
+                ], 409);
+            }
+
+            if (Transaction::where('item_id', $item->item_id)->exists()) {
+                return response()->json([
+                    'message' => 'This item has an order against it, so its record has to stay.',
+                ], 409);
+            }
+
+            $itemId = $item->item_id;
+            $title = $item->title;
+
+            DB::transaction(function () use ($item, $itemId) {
+                ItemPhoto::where('item_id', $itemId)->delete();
+                Message::where('item_id', $itemId)->delete();
+                ConversationSetting::where('item_id', $itemId)->delete();
+                ConversationEvent::where('item_id', $itemId)->delete();
+                DB::table('favorites')->where('item_id', $itemId)->delete();
+                DB::table('reservations')->where('item_id', $itemId)->delete();
+
+                $item->delete();
+            });
+
+            Log::info('Admin deleted an item', [
+                'item_id' => $itemId,
+                'title' => $title,
+                'admin_id' => $request->user()->user_id,
+            ]);
+
+            return response()->json([
+                'message' => "\"{$title}\" was deleted.",
+                'data' => ['item_id' => $itemId],
             ], 200);
         });
     }

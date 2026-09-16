@@ -193,6 +193,10 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::delete('/{item_id}/photos/{photo_id}', [AdminInventoryController::class, 'deletePhoto']);
 
             Route::put('/{item_id}', [AdminInventoryController::class, 'update']);
+
+            // Deleting an offer outright. Admin only, and refused once the
+            // store has taken the item in.
+            Route::delete('/{item_id}', [AdminInventoryController::class, 'destroy']);
         });
 
         // Transaction management
