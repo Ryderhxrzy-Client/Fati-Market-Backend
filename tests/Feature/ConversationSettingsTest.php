@@ -192,4 +192,59 @@ class ConversationSettingsTest extends MarketplaceTestCase
         $this->patchJson('/api/conversations/1/2', ['is_pinned' => true])->assertUnauthorized();
         $this->deleteJson('/api/conversations/1/2')->assertUnauthorized();
     }
+
+    #[Test]
+    public function renaming_a_thread_leaves_a_line_in_it_for_the_person_who_renamed(): void
+    {
+        $admin = $this->admin();
+        $student = $this->student();
+        $item = $this->publishedItem();
+        $this->chat($student, $admin, $item->item_id, 'Available pa po?');
+
+        $this->actingAs($admin)->patchJson("/api/conversations/{$item->item_id}/{$student->user_id}", [
+            'custom_name' => 'Calculator - refund',
+        ])->assertOk();
+
+        // The line travels with the thread, so every device this admin signs
+        // in on shows it - not only the one that did the renaming.
+        $events = $this->actingAs($admin)
+            ->getJson("/api/messages/{$item->item_id}?other_user_id={$student->user_id}")
+            ->assertOk()
+            ->json('events');
+
+        $this->assertCount(1, $events);
+        $this->assertSame('renamed', $events[0]['kind']);
+        $this->assertSame('Calculator - refund', $events[0]['name']);
+        $this->assertNotNull($events[0]['at']);
+
+        // The student sees nothing: the name was never theirs.
+        $this->assertSame([], $this->actingAs($student)
+            ->getJson("/api/messages/{$item->item_id}?other_user_id={$admin->user_id}")
+            ->assertOk()
+            ->json('events'));
+    }
+
+    #[Test]
+    public function clearing_the_name_is_recorded_as_a_line_with_no_name(): void
+    {
+        $admin = $this->admin();
+        $student = $this->student();
+        $item = $this->publishedItem();
+        $this->chat($student, $admin, $item->item_id, 'Hello po');
+
+        $url = "/api/conversations/{$item->item_id}/{$student->user_id}";
+
+        $this->actingAs($admin)->patchJson($url, ['custom_name' => 'Refund case'])->assertOk();
+        $this->actingAs($admin)->patchJson($url, ['custom_name' => ''])->assertOk();
+
+        // The same name twice is not a new line; the thread did not change.
+        $this->actingAs($admin)->patchJson($url, ['custom_name' => ''])->assertOk();
+
+        $events = $this->actingAs($admin)
+            ->getJson("/api/messages/{$item->item_id}?other_user_id={$student->user_id}")
+            ->json('events');
+
+        $this->assertCount(2, $events);
+        $this->assertNull($events[1]['name']);
+    }
 }
