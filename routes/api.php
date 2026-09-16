@@ -171,7 +171,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::get('/scan', [AdminInventoryController::class, 'scan']);
 
             Route::post('/{item_id}/acquisition-price', [AdminInventoryController::class, 'setAcquisitionPrice']);
-            Route::post('/{item_id}/meetup', [AdminInventoryController::class, 'setMeetupSchedule']);
+            // BOOKING/SCHEDULE DISABLED - no longer required
+            // Route::post('/{item_id}/meetup', [AdminInventoryController::class, 'setMeetupSchedule']);
             Route::post('/{item_id}/verify-turnover', [AdminInventoryController::class, 'verifyTurnover']);
             Route::post('/{item_id}/seller-payout', [AdminInventoryController::class, 'recordSellerPayout']);
             Route::get('/{item_id}/publish-preview', [AdminInventoryController::class, 'publishPreview']);
