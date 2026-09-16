@@ -46,22 +46,23 @@ class ItemLifecycleService
         return $item->fresh();
     }
 
-    /** Note the agreed meeting / physical turnover schedule. */
-    public function setMeetupSchedule(Item $item, ?string $schedule): Item
-    {
-        if ($schedule !== null) {
-            $at = Carbon::parse($schedule, config('app.timezone'))->setTimezone(config('app.timezone'));
-            if ($refusal = StoreHours::refusalFor($at)) {
-                throw new RuntimeException($refusal);
-            }
-            // Persist the same store-local time that was checked, including ISO/UTC inputs.
-            $schedule = $at->format('Y-m-d H:i:s');
-        }
+    // BOOKING/SCHEDULE DISABLED - no longer required
+    // /** Note the agreed meeting / physical turnover schedule. */
+    // public function setMeetupSchedule(Item $item, ?string $schedule): Item
+    // {
+        // if ($schedule !== null) {
+            // $at = Carbon::parse($schedule, config('app.timezone'))->setTimezone(config('app.timezone'));
+            // if ($refusal = StoreHours::refusalFor($at)) {
+                // throw new RuntimeException($refusal);
+            // }
+            // // Persist the same store-local time that was checked, including ISO/UTC inputs.
+            // $schedule = $at->format('Y-m-d H:i:s');
+        // }
 
-        $item->update(['meetup_schedule' => $schedule]);
+        // $item->update(['meetup_schedule' => $schedule]);
 
-        return $item->fresh();
-    }
+        // return $item->fresh();
+    // }
 
     /**
      * Ofelia/Admin has physically received and verified the item.

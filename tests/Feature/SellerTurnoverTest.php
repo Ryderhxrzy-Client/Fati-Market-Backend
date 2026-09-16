@@ -147,69 +147,76 @@ class SellerTurnoverTest extends MarketplaceTestCase
         $this->assertNotNull($response->json('data.turnover_photo'));
         $this->assertNotNull($response->json('data.seller_payout_photo'));
 
+        // The photo of the seller being paid is the payout: nothing is left
+        // to "Pay seller" afterwards.
+        $this->assertSame(Item::PAYOUT_PAID, $response->json('data.seller_payout_status'));
+        $this->assertSame('250.00', $response->json('data.seller_payout_amount'));
+        $this->assertNotNull($item->fresh()->seller_paid_at);
+
         // Acquired: the turnover code has done its job.
         $this->assertNull($response->json('data.qr_code'));
     }
 
-    // ── Reminders ────────────────────────────────────────────────────────
+    // BOOKING/SCHEDULE DISABLED - no longer required
+    // // ── Reminders ────────────────────────────────────────────────────────
 
-    #[Test]
-    public function scheduling_notifies_the_seller_and_reminders_fire_once_each(): void
-    {
-        // Meet-ups are booked inside store hours, so pin both the hours and
-        // the clock: a Wednesday morning, with the meet-up that afternoon.
-        config([
-            'store.open_time' => '08:00',
-            'store.close_time' => '17:00',
-            'store.open_days' => '1,2,3,4,5,6',
-        ]);
-        $this->travelTo(Carbon::parse('2026-09-09 07:00:00'));
+    // #[Test]
+    // public function scheduling_notifies_the_seller_and_reminders_fire_once_each(): void
+    // {
+        // // Meet-ups are booked inside store hours, so pin both the hours and
+        // // the clock: a Wednesday morning, with the meet-up that afternoon.
+        // config([
+            // 'store.open_time' => '08:00',
+            // 'store.close_time' => '17:00',
+            // 'store.open_days' => '1,2,3,4,5,6',
+        // ]);
+        // $this->travelTo(Carbon::parse('2026-09-09 07:00:00'));
 
-        [$item, $seller, $admin] = $this->listedItem();
+        // [$item, $seller, $admin] = $this->listedItem();
 
-        $this->actingAs($admin)
-            ->postJson("/api/admin/items/{$item->item_id}/acquisition-price", [
-                'acquisition_price' => '250',
-            ])->assertOk();
+        // $this->actingAs($admin)
+            // ->postJson("/api/admin/items/{$item->item_id}/acquisition-price", [
+                // 'acquisition_price' => '250',
+            // ])->assertOk();
 
-        $meetup = Carbon::now()->addHours(8);
+        // $meetup = Carbon::now()->addHours(8);
 
-        $this->actingAs($admin)
-            ->postJson("/api/admin/items/{$item->item_id}/meetup", [
-                'meetup_schedule' => $meetup->toDateTimeString(),
-            ])->assertOk();
+        // $this->actingAs($admin)
+            // ->postJson("/api/admin/items/{$item->item_id}/meetup", [
+                // 'meetup_schedule' => $meetup->toDateTimeString(),
+            // ])->assertOk();
 
-        $this->assertStringContainsString(
-            'Meet-up set',
-            Message::where('receiver_id', $seller->user_id)->latest('message_id')->firstOrFail()->message,
-        );
+        // $this->assertStringContainsString(
+            // 'Meet-up set',
+            // Message::where('receiver_id', $seller->user_id)->latest('message_id')->firstOrFail()->message,
+        // );
 
-        // Eight hours out: nothing is due yet.
-        $this->artisan('meetups:remind')->assertSuccessful();
-        $this->assertSame('', (string) $item->fresh()->meetup_reminders_sent);
+        // // Eight hours out: nothing is due yet.
+        // $this->artisan('meetups:remind')->assertSuccessful();
+        // $this->assertSame('', (string) $item->fresh()->meetup_reminders_sent);
 
-        // Inside six hours: the 6h reminder fires, exactly once.
-        $this->travelTo($meetup->copy()->subHours(5));
-        $this->artisan('meetups:remind')->assertSuccessful();
-        $this->artisan('meetups:remind')->assertSuccessful();
-        $this->assertSame('360', $item->fresh()->meetup_reminders_sent);
+        // // Inside six hours: the 6h reminder fires, exactly once.
+        // $this->travelTo($meetup->copy()->subHours(5));
+        // $this->artisan('meetups:remind')->assertSuccessful();
+        // $this->artisan('meetups:remind')->assertSuccessful();
+        // $this->assertSame('360', $item->fresh()->meetup_reminders_sent);
 
-        // Inside the hour, then inside thirty minutes.
-        $this->travelTo($meetup->copy()->subMinutes(50));
-        $this->artisan('meetups:remind')->assertSuccessful();
-        $this->assertSame('360,60', $item->fresh()->meetup_reminders_sent);
+        // // Inside the hour, then inside thirty minutes.
+        // $this->travelTo($meetup->copy()->subMinutes(50));
+        // $this->artisan('meetups:remind')->assertSuccessful();
+        // $this->assertSame('360,60', $item->fresh()->meetup_reminders_sent);
 
-        $this->travelTo($meetup->copy()->subMinutes(20));
-        $this->artisan('meetups:remind')->assertSuccessful();
-        $this->assertSame('360,60,30', $item->fresh()->meetup_reminders_sent);
+        // $this->travelTo($meetup->copy()->subMinutes(20));
+        // $this->artisan('meetups:remind')->assertSuccessful();
+        // $this->assertSame('360,60,30', $item->fresh()->meetup_reminders_sent);
 
-        // A new time starts the ledger over.
-        $this->actingAs($admin)
-            ->postJson("/api/admin/items/{$item->item_id}/meetup", [
-                'meetup_schedule' => $meetup->copy()->addDay()->toDateTimeString(),
-            ])->assertOk();
-        $this->assertNull($item->fresh()->meetup_reminders_sent);
-    }
+        // // A new time starts the ledger over.
+        // $this->actingAs($admin)
+            // ->postJson("/api/admin/items/{$item->item_id}/meetup", [
+                // 'meetup_schedule' => $meetup->copy()->addDay()->toDateTimeString(),
+            // ])->assertOk();
+        // $this->assertNull($item->fresh()->meetup_reminders_sent);
+    // }
 
     #[Test]
     public function a_seller_still_sees_the_price_once_their_item_is_reserved(): void

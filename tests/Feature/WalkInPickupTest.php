@@ -103,6 +103,33 @@ class WalkInPickupTest extends MarketplaceTestCase
             ->assertStatus(403);
     }
 
+    #[Test]
+    public function the_receipt_number_and_the_bare_order_number_find_the_order_too(): void
+    {
+        [$transaction, $buyer] = $this->paidOrder();
+        $id = $transaction->transaction_id;
+        $receipt = 'FM-' . str_pad((string) $id, 6, '0', STR_PAD_LEFT);
+
+        foreach ([$receipt, strtolower($receipt), 'FM ' . $id, (string) $id] as $typed) {
+            $this->actingAs($this->admin())
+                ->getJson('/api/admin/transactions/scan?code=' . urlencode($typed))
+                ->assertOk()
+                ->assertJsonPath('data.transaction_id', $id)
+                ->assertJsonPath('data.receipt_no', $receipt);
+        }
+
+        // A number that is no order, and a receipt-shaped string with junk, stay 404.
+        $this->actingAs($this->admin())
+            ->getJson('/api/admin/transactions/scan?code=FM-999999')
+            ->assertNotFound();
+        $this->getJson('/api/admin/transactions/scan?code=FM-000015x')->assertNotFound();
+
+        // Still admin-only, whichever form is typed.
+        $this->actingAs($buyer)
+            ->getJson('/api/admin/transactions/scan?code=' . urlencode($receipt))
+            ->assertStatus(403);
+    }
+
     // ── Completing with the handover photo ───────────────────────────────
 
     #[Test]

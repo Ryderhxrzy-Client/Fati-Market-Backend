@@ -377,8 +377,19 @@ class CheckoutService
             throw new RuntimeException('This order is already closed.');
         }
 
-        if ($transaction->payment_status !== Transaction::PAYMENT_VERIFIED) {
-            throw new RuntimeException('Payment must be verified before the item can be picked up.');
+        // Pickup is unlocked by the approval, not by the payment - the same
+        // rule the presenter uses to offer the button. A pay-at-the-store
+        // order is approved, held, and paid when it is collected; refusing
+        // to stage it until it was "verified" meant the button was offered
+        // and then declined.
+        $approved = $transaction->payment_status === Transaction::PAYMENT_VERIFIED
+            || in_array($transaction->status, [
+                Transaction::STATUS_RESERVED,
+                Transaction::STATUS_READY_FOR_PICKUP,
+            ], true);
+
+        if (!$approved) {
+            throw new RuntimeException('Approve the order, or verify its payment, before marking it ready for pickup.');
         }
 
         $transaction->update([

@@ -275,6 +275,34 @@ class TransactionLifecycleTest extends MarketplaceTestCase
             ->assertJsonPath('data.pickup_status', Transaction::PICKUP_PICKED_UP);
     }
 
+    #[Test]
+    public function an_approved_cash_order_can_be_staged_for_pickup_before_it_is_paid(): void
+    {
+        [$transaction] = $this->openCheckout('250', 0, 0, 'cash');
+        $admin = $this->admin();
+        $id = $transaction->transaction_id;
+
+        // Not yet approved: nothing to stage.
+        $this->actingAs($admin)->postJson("/api/admin/transactions/{$id}/ready-for-pickup")->assertStatus(409);
+
+        // Approving a pay-at-the-store order holds the item without marking it paid...
+        $this->postJson("/api/admin/transactions/{$id}/approve-order")->assertOk()
+            ->assertJsonPath('data.status', Transaction::STATUS_RESERVED)
+            ->assertJsonPath('data.payment_status', Transaction::PAYMENT_UNPAID);
+
+        // ...and that approval is what unlocks "ready for pickup", as the offered actions say.
+        $this->getJson('/api/admin/transactions')->assertOk();
+        $this->postJson("/api/admin/transactions/{$id}/ready-for-pickup")->assertOk()
+            ->assertJsonPath('data.status', Transaction::STATUS_READY_FOR_PICKUP)
+            ->assertJsonPath('data.pickup_status', Transaction::PICKUP_READY)
+            ->assertJsonPath('data.payment_status', Transaction::PAYMENT_UNPAID);
+
+        // The cash is taken at the counter, when the order is completed.
+        $this->postJson("/api/admin/transactions/{$id}/complete")->assertOk()
+            ->assertJsonPath('data.status', Transaction::STATUS_COMPLETED)
+            ->assertJsonPath('data.payment_status', Transaction::PAYMENT_VERIFIED);
+    }
+
     // ── Admin transaction screen ─────────────────────────────────────────
 
     #[Test]
