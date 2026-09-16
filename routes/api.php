@@ -113,6 +113,10 @@ Route::middleware('auth:sanctum')->group(function () {
     // The address a student keeps after graduating. Proven by a code before it
     // counts, and proven again on every change - otherwise anyone holding an
     // open session could point the recovery address at themselves.
+    // Changing the password of the account you are signed in as.
+    Route::get('/account/password', [\App\Http\Controllers\Api\AccountPasswordController::class, 'show']);
+    Route::post('/account/password', [\App\Http\Controllers\Api\AccountPasswordController::class, 'update']);
+
     Route::prefix('account/personal-email')->group(function () {
         Route::post('/', [PersonalEmailController::class, 'request']);
         Route::get('/status', [PersonalEmailController::class, 'status']);
