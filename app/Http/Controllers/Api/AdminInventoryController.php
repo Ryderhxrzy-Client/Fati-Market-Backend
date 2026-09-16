@@ -196,50 +196,51 @@ class AdminInventoryController extends Controller
         });
     }
 
-    /**
-     * Record the agreed meeting / physical turnover schedule.
-     * POST /api/admin/items/{item_id}/meetup
-     */
-    public function setMeetupSchedule(Request $request, $itemId)
-    {
-        $request->validate(['meetup_schedule' => ['nullable', 'date']]);
+    // BOOKING/SCHEDULE DISABLED - no longer required
+    // /**
+     // * Record the agreed meeting / physical turnover schedule.
+     // * POST /api/admin/items/{item_id}/meetup
+     // */
+    // public function setMeetupSchedule(Request $request, $itemId)
+    // {
+        // $request->validate(['meetup_schedule' => ['nullable', 'date']]);
 
-        // Clearing the schedule is always allowed. A new time has to fall
-        // within this month, on a day and at an hour the store is open.
-        if ($request->filled('meetup_schedule')) {
-            $at = Carbon::parse($request->input('meetup_schedule'))->setTimezone(config('app.timezone'));
-            $refusal = StoreHours::refusalFor($at);
+        // // Clearing the schedule is always allowed. A new time has to fall
+        // // within this month, on a day and at an hour the store is open.
+        // if ($request->filled('meetup_schedule')) {
+            // $at = Carbon::parse($request->input('meetup_schedule'))->setTimezone(config('app.timezone'));
+            // $refusal = StoreHours::refusalFor($at);
 
-            if ($refusal !== null) {
-                return response()->json([
-                    'message' => $refusal,
-                    'errors' => ['meetup_schedule' => [$refusal]],
-                ], 422);
-            }
-        }
+            // if ($refusal !== null) {
+                // return response()->json([
+                    // 'message' => $refusal,
+                    // 'errors' => ['meetup_schedule' => [$refusal]],
+                // ], 422);
+            // }
+        // }
 
-        return $this->withItem($itemId, function (Item $item) use ($request) {
-            $item = $this->lifecycle->setMeetupSchedule($item, $request->input('meetup_schedule'));
+        // return $this->withItem($itemId, function (Item $item) use ($request) {
+            // $item = $this->lifecycle->setMeetupSchedule($item, $request->input('meetup_schedule'));
 
-            // A new time starts the 6h/1h/30m reminders over.
-            $item->update(['meetup_reminders_sent' => null]);
+            // // A new time starts the 6h/1h/30m reminders over.
+            // $item->update(['meetup_reminders_sent' => null]);
 
-            if ($item->meetup_schedule !== null) {
-                $this->notifier->itemUpdate(
-                    $item,
-                    "Meet-up set for \"{$item->title}\": "
-                        . \Illuminate\Support\Carbon::parse($item->meetup_schedule)->format('M j, g:i A')
-                        . '. Bring the item and show your QR code at the store.',
-                    'Meet-up scheduled',
-                );
-            }
+            // if ($item->meetup_schedule !== null) {
+                // $this->notifier->itemUpdate(
+                    // $item,
+                    // "Meet-up set for \"{$item->title}\": "
+                        // . \Illuminate\Support\Carbon::parse($item->meetup_schedule)->format('M j, g:i A')
+                        // . '. Bring the item and show your QR code at the store.',
+                    // 'Meet-up scheduled',
+                // );
+            // }
 
-            return response()->json([
-                'message' => 'Meet-up schedule saved',
-                'data' => ItemPresenter::forAdmin($item),
-            ], 200);
-        });
-    }
+            // return response()->json([
+                // 'message' => 'Meet-up schedule saved',
+                // 'data' => ItemPresenter::forAdmin($item),
+            // ], 200);
+        // });
+    // }
 
     /**
      * Ofelia/Admin has physically received and verified the item.
