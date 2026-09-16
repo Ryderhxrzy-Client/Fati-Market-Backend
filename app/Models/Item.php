@@ -206,6 +206,22 @@ class Item extends Model
         return $this->hasMany(Transaction::class, 'item_id', 'item_id');
     }
 
+    /**
+     * The order that sold this item.
+     *
+     * A sold listing is the buyer's side of a story the item's own row cannot
+     * tell: what was paid, how, and what the buyer earned back. Payouts to
+     * sellers are excluded, because those are the store paying out rather
+     * than anyone buying.
+     */
+    public function sale()
+    {
+        return $this->hasOne(Transaction::class, 'item_id', 'item_id')
+            ->where('is_seller_payout', false)
+            ->where('status', Transaction::STATUS_COMPLETED)
+            ->latest('completed_at');
+    }
+
     public function acquiredBy()
     {
         return $this->belongsTo(User::class, 'acquired_by', 'user_id');
