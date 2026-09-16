@@ -51,6 +51,10 @@ class AdminInventoryController extends Controller
             $query = Item::with([
                 'seller' => fn ($q) => $q->select('user_id', 'email'),
                 'photos' => fn ($q) => $q->select('photo_id', 'item_id', 'photo_url'),
+
+                // The order behind a sold item, so the sold list can say what
+                // was paid and what the buyer earned without a second call.
+                'sale.buyer.studentInfo',
             ]);
 
             if ($request->filled('status')) {
