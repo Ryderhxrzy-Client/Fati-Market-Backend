@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\ItemPresenter;
 use App\Http\Resources\TransactionPresenter;
+use App\Models\ConversationEvent;
 use App\Models\ConversationSetting;
 use App\Models\Item;
 use App\Models\Message;
@@ -264,10 +265,29 @@ class MessagesController extends Controller
                     ];
                 });
 
+            // The thread's own lines - a rename, so far - for this person
+            // only. They are drawn between the messages, so they travel with
+            // the thread rather than sitting in one device's storage.
+            $events = collect();
+
+            if ($otherUserId) {
+                $eventQuery = ConversationEvent::forThread($userId, (int) $itemId, (int) $otherUserId)
+                    ->orderBy('created_at');
+
+                // A cleared conversation starts again from the clearing, and
+                // its old lines go with it.
+                if (isset($clearedAt) && $clearedAt !== null) {
+                    $eventQuery->where('created_at', '>', $clearedAt);
+                }
+
+                $events = $eventQuery->get()->map(fn (ConversationEvent $event) => $event->toClientArray());
+            }
+
             return response()->json([
                 'message' => 'Messages retrieved successfully',
                 'data' => $messages,
                 'count' => $messages->count(),
+                'events' => $events->values(),
             ], 200);
 
         } catch (\Exception $e) {
@@ -475,9 +495,17 @@ class MessagesController extends Controller
 
         $setting = ConversationSetting::forThread($userId, (int) $itemId, (int) $otherUserId);
 
+        // A rename is noted in the thread itself, the way a chat app notes a
+        // changed name. It used to live in the browser's or the phone's own
+        // storage, so renaming in one of them showed nothing in the other.
+        $renamed = false;
+        $renamedTo = null;
+
         if (array_key_exists('custom_name', $validated)) {
             $name = trim((string) $validated['custom_name']);
-            $setting->custom_name = $name === '' ? null : $name;
+            $renamedTo = $name === '' ? null : $name;
+            $renamed = $renamedTo !== $setting->custom_name;
+            $setting->custom_name = $renamedTo;
         }
 
         if (array_key_exists('is_pinned', $validated)) {
@@ -496,6 +524,10 @@ class MessagesController extends Controller
         }
 
         $setting->save();
+
+        if ($renamed) {
+            ConversationEvent::record($userId, (int) $itemId, (int) $otherUserId, $renamedTo);
+        }
 
         return response()->json([
             'message' => 'Conversation updated',
