@@ -60,6 +60,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/notifications/chat', [\App\Http\Controllers\Api\ChatNotificationsController::class, 'index']);
 
     // Profile routes
+    Route::put('/profile', [AuthController::class, 'updateProfile']);
     Route::post('/profile/picture', [AuthController::class, 'updateProfilePicture']);
     Route::get('/wallet', [AuthController::class, 'getWalletBalance']);
 
