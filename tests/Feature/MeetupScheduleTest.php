@@ -38,11 +38,12 @@ class MeetupScheduleTest extends MarketplaceTestCase
             ->create(['acquisition_price' => '250.00']);
     }
 
-    private function book(?string $at)
-    {
-        return $this->actingAs($this->admin)
-            ->postJson("/api/admin/items/{$this->item->item_id}/meetup", ['meetup_schedule' => $at]);
-    }
+    // BOOKING/SCHEDULE DISABLED - no longer required
+    // private function book(?string $at)
+    // {
+        // return $this->actingAs($this->admin)
+            // ->postJson("/api/admin/items/{$this->item->item_id}/meetup", ['meetup_schedule' => $at]);
+    // }
 
     #[Test]
     public function the_store_hours_are_served_from_config(): void
@@ -84,111 +85,112 @@ class MeetupScheduleTest extends MarketplaceTestCase
             ->assertJsonPath('data.open_days', [1, 2, 3, 4, 5, 6]);
     }
 
-    #[Test]
-    public function a_time_inside_store_hours_this_month_is_booked(): void
-    {
-        $this->book('2026-09-10 10:30:00')->assertOk();
+    // BOOKING/SCHEDULE DISABLED - no longer required
+    // #[Test]
+    // public function a_time_inside_store_hours_this_month_is_booked(): void
+    // {
+        // $this->book('2026-09-10 10:30:00')->assertOk();
 
-        $this->assertSame(
-            '2026-09-10 10:30:00',
-            $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'),
-        );
-    }
+        // $this->assertSame(
+            // '2026-09-10 10:30:00',
+            // $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'),
+        // );
+    // }
 
-    #[Test]
-    public function a_time_that_has_passed_is_refused(): void
-    {
-        $this->book('2026-09-08 10:00:00')
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'That time has already passed. Pick a later time.');
+    // #[Test]
+    // public function a_time_that_has_passed_is_refused(): void
+    // {
+        // $this->book('2026-09-08 10:00:00')
+            // ->assertStatus(422)
+            // ->assertJsonPath('message', 'That time has already passed. Pick a later time.');
 
-        $this->assertNull($this->item->fresh()->meetup_schedule);
-    }
+        // $this->assertNull($this->item->fresh()->meetup_schedule);
+    // }
 
-    #[Test]
-    public function next_month_is_refused(): void
-    {
-        $this->book('2026-10-01 10:00:00')
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('meetup_schedule')
-            ->assertJsonPath('message', 'Meet-ups can only be booked within September 2026.');
-    }
+    // #[Test]
+    // public function next_month_is_refused(): void
+    // {
+        // $this->book('2026-10-01 10:00:00')
+            // ->assertStatus(422)
+            // ->assertJsonValidationErrors('meetup_schedule')
+            // ->assertJsonPath('message', 'Meet-ups can only be booked within September 2026.');
+    // }
 
-    #[Test]
-    public function a_day_the_store_is_closed_is_refused(): void
-    {
-        $this->book('2026-09-13 10:00:00')
-            ->assertStatus(422)
-            ->assertJsonPath('message', 'The store is closed on Sundays.');
-    }
+    // #[Test]
+    // public function a_day_the_store_is_closed_is_refused(): void
+    // {
+        // $this->book('2026-09-13 10:00:00')
+            // ->assertStatus(422)
+            // ->assertJsonPath('message', 'The store is closed on Sundays.');
+    // }
 
-    #[Test]
-    public function times_outside_store_hours_are_refused(): void
-    {
-        $this->book('2026-09-10 07:30:00')->assertStatus(422);
-        $this->book('2026-09-10 17:00:00')->assertStatus(422);
+    // #[Test]
+    // public function times_outside_store_hours_are_refused(): void
+    // {
+        // $this->book('2026-09-10 07:30:00')->assertStatus(422);
+        // $this->book('2026-09-10 17:00:00')->assertStatus(422);
 
-        // The last slot starts before closing.
-        $this->book('2026-09-10 16:30:00')->assertOk();
-    }
+        // // The last slot starts before closing.
+        // $this->book('2026-09-10 16:30:00')->assertOk();
+    // }
 
-    #[Test]
-    public function the_hours_follow_the_env_settings(): void
-    {
-        config(['store.open_days' => '1,2,3,4,5,6,7', 'store.close_time' => '20:00']);
+    // #[Test]
+    // public function the_hours_follow_the_env_settings(): void
+    // {
+        // config(['store.open_days' => '1,2,3,4,5,6,7', 'store.close_time' => '20:00']);
 
-        $this->book('2026-09-13 19:30:00')->assertOk();
-    }
+        // $this->book('2026-09-13 19:30:00')->assertOk();
+    // }
 
-    #[Test]
-    public function the_schedule_can_still_be_cleared(): void
-    {
-        $this->book('2026-09-10 10:30:00')->assertOk();
-        $this->book(null)->assertOk();
+    // #[Test]
+    // public function the_schedule_can_still_be_cleared(): void
+    // {
+        // $this->book('2026-09-10 10:30:00')->assertOk();
+        // $this->book(null)->assertOk();
 
-        $this->assertNull($this->item->fresh()->meetup_schedule);
-    }
+        // $this->assertNull($this->item->fresh()->meetup_schedule);
+    // }
 
-    #[Test]
-    public function a_slot_that_runs_past_closing_is_refused_without_changing_the_booking(): void
-    {
-        $this->book('2026-09-10 16:30:00')->assertOk();
-        foreach (['16:30:01', '16:31:00', '16:59:00', '17:00:00', '18:00:00'] as $time) {
-            $this->book('2026-09-10 '.$time)->assertStatus(422)->assertJsonValidationErrors('meetup_schedule');
-            $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
-        }
-    }
+    // #[Test]
+    // public function a_slot_that_runs_past_closing_is_refused_without_changing_the_booking(): void
+    // {
+        // $this->book('2026-09-10 16:30:00')->assertOk();
+        // foreach (['16:30:01', '16:31:00', '16:59:00', '17:00:00', '18:00:00'] as $time) {
+            // $this->book('2026-09-10 '.$time)->assertStatus(422)->assertJsonValidationErrors('meetup_schedule');
+            // $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
+        // }
+    // }
 
-    #[Test]
-    public function custom_slot_duration_must_fit_before_closing(): void
-    {
-        config(['store.close_time' => '17:15', 'store.slot_minutes' => 60]);
-        $this->book('2026-09-10 16:15:00')->assertOk();
-        $this->book('2026-09-10 16:15:01')->assertStatus(422);
-    }
+    // #[Test]
+    // public function custom_slot_duration_must_fit_before_closing(): void
+    // {
+        // config(['store.close_time' => '17:15', 'store.slot_minutes' => 60]);
+        // $this->book('2026-09-10 16:15:00')->assertOk();
+        // $this->book('2026-09-10 16:15:01')->assertStatus(422);
+    // }
 
-    #[Test]
-    public function timezone_inputs_are_checked_and_saved_in_store_local_time(): void
-    {
-        $this->book('2026-09-10T08:30:00Z')->assertOk();
-        $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
-        $this->book('2026-09-10T09:00:00Z')->assertStatus(422);
-        $this->book('2026-09-10T16:00:00-04:00')->assertStatus(422);
-    }
+    // #[Test]
+    // public function timezone_inputs_are_checked_and_saved_in_store_local_time(): void
+    // {
+        // $this->book('2026-09-10T08:30:00Z')->assertOk();
+        // $this->assertSame('2026-09-10 16:30:00', $this->item->fresh()->meetup_schedule->format('Y-m-d H:i:s'));
+        // $this->book('2026-09-10T09:00:00Z')->assertStatus(422);
+        // $this->book('2026-09-10T16:00:00-04:00')->assertStatus(422);
+    // }
 
-    #[Test]
-    public function after_closing_today_only_a_future_open_slot_can_be_booked(): void
-    {
-        $this->travelTo(Carbon::parse('2026-09-09 18:00:00'));
-        $this->book('2026-09-09 16:30:00')->assertStatus(422);
-        $this->book('2026-09-09 18:30:00')->assertStatus(422);
-        $this->book('2026-09-10 08:00:00')->assertOk();
-    }
+    // #[Test]
+    // public function after_closing_today_only_a_future_open_slot_can_be_booked(): void
+    // {
+        // $this->travelTo(Carbon::parse('2026-09-09 18:00:00'));
+        // $this->book('2026-09-09 16:30:00')->assertStatus(422);
+        // $this->book('2026-09-09 18:30:00')->assertStatus(422);
+        // $this->book('2026-09-10 08:00:00')->assertOk();
+    // }
 
-    #[Test]
-    public function direct_service_calls_cannot_bypass_store_hours(): void
-    {
-        $this->expectException(\RuntimeException::class);
-        app(\App\Services\ItemLifecycleService::class)->setMeetupSchedule($this->item, '2026-09-10 18:00:00');
-    }
+    // #[Test]
+    // public function direct_service_calls_cannot_bypass_store_hours(): void
+    // {
+        // $this->expectException(\RuntimeException::class);
+        // app(\App\Services\ItemLifecycleService::class)->setMeetupSchedule($this->item, '2026-09-10 18:00:00');
+    // }
 }
