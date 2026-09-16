@@ -133,10 +133,54 @@ class ItemPresenter
             // The seller's turnover code, valid once the offer is priced.
             'qr_code' => self::turnoverCode($item),
 
+            // The order that sold it, when the caller asked for it. A sold
+            // listing on its own says nothing about what was paid, how, or
+            // what the buyer earned back.
+            'sale' => self::saleSummary($item),
+
             // Legacy keys, preserved for the current admin app build.
             'price_points' => $item->price_points,
             'markup_points' => $item->markup_points,
         ]);
+    }
+
+    /**
+     * The sale behind a sold item, for callers that loaded it.
+     *
+     * Null when the relation was never loaded, so no screen pays for a query
+     * it did not ask for, and null when the item has not been sold.
+     */
+    private static function saleSummary(Item $item): ?array
+    {
+        if (!$item->relationLoaded('sale') || $item->sale === null) {
+            return null;
+        }
+
+        $sale = $item->sale;
+        $buyer = $sale->relationLoaded('buyer') ? $sale->buyer : null;
+        $info = $buyer?->studentInfo;
+        $name = trim(($info?->first_name ?? '') . ' ' . ($info?->last_name ?? ''));
+
+        return [
+            'transaction_id' => $sale->transaction_id,
+            'receipt_no' => 'FM-' . str_pad((string) $sale->transaction_id, 6, '0', STR_PAD_LEFT),
+            'buyer_id' => $sale->buyer_id,
+            'buyer_email' => $buyer?->email,
+            'buyer_name' => $name !== '' ? $name : null,
+            'payment_method' => $sale->payment_method,
+            'payment_status' => $sale->payment_status,
+            'subtotal' => $sale->subtotalMoney()->toDecimalString(),
+            'amount_due' => $sale->amountDueMoney()->toDecimalString(),
+            'points_used' => (int) $sale->points_used,
+            'points_discount_amount' => $sale->discountMoney()->toDecimalString(),
+
+            // What the buyer got back for the purchase, credited when the
+            // order was completed.
+            'reward_points_earned' => (int) $sale->reward_points_earned,
+
+            'completed_at' => $sale->completed_at,
+            'transaction_date' => $sale->transaction_date,
+        ];
     }
 
     /**
