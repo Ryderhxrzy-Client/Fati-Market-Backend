@@ -321,6 +321,46 @@ class AuthController extends Controller
     }
 
     /**
+     * The name on the account, as its owner writes it.
+     * PUT /api/profile
+     *
+     * Names live on `student_information` rather than on `users`, and nothing
+     * could write them after registration: an admin whose name was typed
+     * wrong once carried it for good, on every screen and beside every line
+     * of the activity feed. The row is created when it is missing, because a
+     * Google sign-up may never have made one.
+     */
+    public function updateProfile(Request $request)
+    {
+        $validated = $request->validate([
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+        ]);
+
+        $user = $request->user();
+
+        $info = StudentInformation::updateOrCreate(
+            ['user_id' => $user->user_id],
+            [
+                'first_name' => trim($validated['first_name']),
+                'last_name' => trim($validated['last_name']),
+            ],
+        );
+
+        return response()->json([
+            'message' => 'Profile updated successfully',
+            'data' => [
+                'user_id' => $user->user_id,
+                'email' => $user->email,
+                'first_name' => $info->first_name,
+                'last_name' => $info->last_name,
+                'profile_picture' => $info->profile_picture,
+                'role' => $user->role,
+            ],
+        ], 200);
+    }
+
+    /**
      * Update profile picture
      * PUT /api/profile/picture
      */
