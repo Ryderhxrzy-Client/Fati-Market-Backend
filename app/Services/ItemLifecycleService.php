@@ -220,6 +220,42 @@ class ItemLifecycleService
         });
     }
 
+    /**
+     * Note the selling price an item will carry, before it goes on sale.
+     *
+     * The counter sets a price at the moment of turnover - on the phone, in
+     * the chat, or in the inventory panel - and that price has to survive
+     * even when the item is not being published in the same breath. Until
+     * this existed the only way to store a price was to publish, so a price
+     * typed alongside any other status was silently dropped.
+     *
+     * A published item still goes through [publish], so repricing the catalog
+     * keeps every one of its rules.
+     */
+    public function recordPublicPrice(Item $item, Money $publicPrice, User $admin): Item
+    {
+        if ($item->status === Item::STATUS_PUBLIC) {
+            return $this->publish($item, $publicPrice, $admin);
+        }
+
+        if ($item->status === Item::STATUS_SOLD) {
+            throw new RuntimeException('This item has already been sold.');
+        }
+
+        if (!$publicPrice->isPositive()) {
+            throw new RuntimeException('The public selling price must be greater than zero.');
+        }
+
+        $item->update([
+            'public_price' => $publicPrice->toDecimalString(),
+            'reward_points' => LoyaltyRules::rewardPointsFor($publicPrice),
+            'price_source' => 'cash',
+            'markup_points' => intdiv($publicPrice->centavos(), 100),
+        ]);
+
+        return $item->fresh();
+    }
+
     /** Change the price of an already published item. */
     public function updatePublicPrice(Item $item, Money $publicPrice, User $admin): Item
     {

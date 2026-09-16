@@ -502,32 +502,41 @@ class AdminInventoryController extends Controller
                 $item = $this->lifecycle->publish($item, $price, $request->user());
             } elseif ($requestedStatus === Item::STATUS_REJECTED) {
                 $item = $this->lifecycle->reject($item, $request->input('reason', 'Rejected by admin'));
-            } elseif ($requestedStatus !== null && $requestedStatus !== $item->status) {
-                if (!in_array($requestedStatus, Item::ALL_STATUSES, true)) {
-                    return response()->json([
-                        'message' => 'Invalid status. Allowed values: ' . implode(', ', Item::ALL_STATUSES),
-                    ], 422);
+            } else {
+                // A price and a status arrive together from the counter - the
+                // turnover screen sets both at once - so both are applied.
+                // The price used to be applied only to an already published
+                // item, which silently threw away every price typed next to
+                // any other status.
+                if ($rawPrice !== null) {
+                    $price = $this->parsePrice($rawPrice);
+
+                    if ($price === null || !$price->isPositive()) {
+                        return $this->invalidAmount('public_price');
+                    }
+
+                    $item = $this->lifecycle->recordPublicPrice($item, $price, $request->user());
                 }
 
-                // `acquired` and `sold` are reached through turnover
-                // verification and checkout completion respectively.
-                if (in_array($requestedStatus, [Item::STATUS_ACQUIRED, Item::STATUS_SOLD], true)) {
-                    return response()->json([
-                        'message' => $requestedStatus === Item::STATUS_ACQUIRED
-                            ? 'Use the verify-turnover action to mark an item as acquired.'
-                            : 'An item becomes sold when its transaction is completed.',
-                    ], 422);
+                if ($requestedStatus !== null && $requestedStatus !== $item->status) {
+                    if (!in_array($requestedStatus, Item::ALL_STATUSES, true)) {
+                        return response()->json([
+                            'message' => 'Invalid status. Allowed values: ' . implode(', ', Item::ALL_STATUSES),
+                        ], 422);
+                    }
+
+                    // `acquired` and `sold` are reached through turnover
+                    // verification and checkout completion respectively.
+                    if (in_array($requestedStatus, [Item::STATUS_ACQUIRED, Item::STATUS_SOLD], true)) {
+                        return response()->json([
+                            'message' => $requestedStatus === Item::STATUS_ACQUIRED
+                                ? 'Use the verify-turnover action to mark an item as acquired.'
+                                : 'An item becomes sold when its transaction is completed.',
+                        ], 422);
+                    }
+
+                    $item->update(['status' => $requestedStatus]);
                 }
-
-                $item->update(['status' => $requestedStatus]);
-            } elseif ($rawPrice !== null && $item->status === Item::STATUS_PUBLIC) {
-                $price = $this->parsePrice($rawPrice);
-
-                if ($price === null || !$price->isPositive()) {
-                    return $this->invalidAmount('public_price');
-                }
-
-                $item = $this->lifecycle->updatePublicPrice($item, $price, $request->user());
             }
 
             return response()->json([
