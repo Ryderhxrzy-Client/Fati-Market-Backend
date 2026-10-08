@@ -80,7 +80,7 @@ class CheckoutController extends Controller
                 'payment_required' => !$quote['is_full_points'],
                 'payment_methods' => $quote['is_full_points']
                     ? []
-                    : [Transaction::METHOD_CASH, Transaction::METHOD_GCASH],
+                    : [Transaction::METHOD_CASH, Transaction::METHOD_GCASH, Transaction::METHOD_PAYMONGO],
             ],
         ], 200);
     }
@@ -94,7 +94,7 @@ class CheckoutController extends Controller
         $validated = $request->validate([
             'item_id' => ['required', 'integer', 'exists:items,item_id'],
             'points_used' => ['nullable', 'integer', 'min:0'],
-            'payment_method' => ['required', 'in:cash,gcash'],
+            'payment_method' => ['required', 'in:cash,gcash,paymongo'],
         ]);
 
         $item = Item::where('item_id', $validated['item_id'])->first();
@@ -210,7 +210,7 @@ class CheckoutController extends Controller
     public function changePaymentMethod(Request $request, $transactionId)
     {
         $validated = $request->validate([
-            'payment_method' => ['required', 'in:cash,gcash'],
+            'payment_method' => ['required', 'in:cash,gcash,paymongo'],
         ]);
 
         $transaction = Transaction::where('transaction_id', $transactionId)->first();

@@ -182,7 +182,7 @@ class Transaction extends Model
     {
         return $this->status === self::STATUS_PENDING_PAYMENT
             && $this->payment_status === self::PAYMENT_UNPAID
-            && in_array($this->payment_method, [self::METHOD_CASH, self::METHOD_GCASH], true);
+            && in_array($this->payment_method, [self::METHOD_CASH, self::METHOD_GCASH, self::METHOD_PAYMONGO], true);
     }
 
     public function hasExpired(): bool
