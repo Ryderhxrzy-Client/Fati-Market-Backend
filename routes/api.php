@@ -6,6 +6,8 @@ use App\Http\Controllers\Api\ActivityController;
 use App\Http\Controllers\Api\CategoriesController;
 use App\Http\Controllers\Api\GoogleAuthController;
 use App\Http\Controllers\Api\PasswordResetController;
+use App\Http\Controllers\Api\PayMongoController;
+use App\Http\Controllers\Api\PayMongoWebhookController;
 use App\Http\Controllers\Api\PersonalEmailController;
 use App\Http\Controllers\Api\CheckoutController;
 use App\Http\Controllers\Api\FavoritesController;
@@ -20,6 +22,9 @@ use Illuminate\Support\Facades\Route;
 // Public routes
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
+
+// PayMongo Webhook (Public)
+Route::post('/paymongo/webhook', [PayMongoWebhookController::class, 'handleWebhook']);
 
 // Google is a way to sign in, not a way past the school's checks: registering
 // still needs the verification document, so it has its own route.
@@ -111,6 +116,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/{transaction_id}/cancel', [CheckoutController::class, 'cancel']);
     });
 
+    // PayMongo Sandbox Checkout Session Creation
+    Route::post('/paymongo/checkout', [PayMongoController::class, 'createCheckoutSession']);
+
     // The address a student keeps after graduating. Proven by a code before it
     // counts, and proven again on every change - otherwise anyone holding an
     // open session could point the recovery address at themselves.
@@ -150,6 +158,7 @@ Route::middleware('auth:sanctum')->group(function () {
      * transactions are all gated here by role, read from the token.
      */
     Route::middleware('admin')->group(function () {
+        Route::post('/paymongo/webhook/setup', [PayMongoWebhookController::class, 'setupWebhook']);
         Route::get('/admin/settings/store-hours', [\App\Http\Controllers\Api\StoreHoursSettingsController::class, 'show']);
         Route::put('/admin/settings/store-hours', [\App\Http\Controllers\Api\StoreHoursSettingsController::class, 'update']);
         Route::get('/admin/settings/gcash', [\App\Http\Controllers\Api\PaymentSettingsController::class, 'show']);
