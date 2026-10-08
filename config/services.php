@@ -68,4 +68,12 @@ return [
         'secret' => env('CLOUDINARY_SECRET'),
     ],
 
+    'paymongo' => [
+        'mode' => env('PAYMENT_MODE', 'test'),
+        'secret_key_test' => env('PAYMONGO_SECRET_KEY_TEST'),
+        'public_key_test' => env('PAYMONGO_PUBLIC_KEY_TEST'),
+        'webhook_link' => env('PAYMONGO_WEBHOOK_LINK'),
+        'webhook_secret_key_test' => env('PAYMONGO_WEBHOOK_SECRET_KEY_TEST'),
+    ],
+
 ];
