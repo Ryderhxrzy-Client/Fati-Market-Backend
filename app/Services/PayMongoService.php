@@ -100,12 +100,19 @@ class PayMongoService
             'show_line_items' => true,
         ];
 
+        $defaultSuccessUrl = "https://ofelia.alertaraqc.com/payment/success?transaction_id={$transaction->transaction_id}";
+        $defaultCancelUrl = "https://ofelia.alertaraqc.com/payment/cancel?transaction_id={$transaction->transaction_id}";
+
         if (!empty($successUrl)) {
-            $attributes['success_url'] = $successUrl;
+            $attributes['success_url'] = str_replace('fati.alertaraqc.com', 'ofelia.alertaraqc.com', $successUrl);
+        } else {
+            $attributes['success_url'] = $defaultSuccessUrl;
         }
 
         if (!empty($cancelUrl)) {
-            $attributes['cancel_url'] = $cancelUrl;
+            $attributes['cancel_url'] = str_replace('fati.alertaraqc.com', 'ofelia.alertaraqc.com', $cancelUrl);
+        } else {
+            $attributes['cancel_url'] = $defaultCancelUrl;
         }
 
         $payload = [
