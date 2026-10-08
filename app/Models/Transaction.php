@@ -63,10 +63,11 @@ class Transaction extends Model
     public const PICKUP_READY = 'ready';
     public const PICKUP_PICKED_UP = 'picked_up';
 
-    /** Cash and GCash both settle in person; POINTS_FULL owes nothing. */
+    /** Cash and GCash both settle in person; POINTS_FULL owes nothing; PAYMONGO is online sandbox checkout. */
     public const METHOD_CASH = 'cash';
     public const METHOD_GCASH = 'gcash';
     public const METHOD_POINTS_FULL = 'points_full';
+    public const METHOD_PAYMONGO = 'paymongo';
 
     protected $primaryKey = 'transaction_id';
     public $incrementing = true;
@@ -91,6 +92,8 @@ class Transaction extends Model
         'payment_method',
         'payment_proof',
         'payment_reference',
+        'paymongo_checkout_session_id',
+        'paymongo_event_id',
         'payment_proof_submitted_at',
         'payment_status',
         'payment_verified_at',
