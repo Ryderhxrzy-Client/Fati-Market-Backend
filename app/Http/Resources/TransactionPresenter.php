@@ -4,6 +4,7 @@ namespace App\Http\Resources;
 
 use App\Models\Transaction;
 use App\Support\LoyaltyRules;
+use App\Support\Money;
 use App\Support\OrderQr;
 
 /**
@@ -101,6 +102,18 @@ class TransactionPresenter
         $discount = $transaction->discountMoney();
         $amountDue = $transaction->amountDueMoney();
 
+        $isCash = $transaction->payment_method === Transaction::METHOD_CASH;
+        $downpaymentAmount = ($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
+            ? $transaction->downpaymentAmountMoney()
+            : ($isCash ? Money::fromCentavos((int) round($amountDue->centavos() * 0.50)) : Money::zero());
+        $remainingBalance = ($transaction->remaining_balance !== null && (float) $transaction->remaining_balance > 0)
+            ? $transaction->remainingBalanceMoney()
+            : ($isCash ? $amountDue->minus($downpaymentAmount) : Money::zero());
+
+        $transactionDate = $transaction->transaction_date ?? $transaction->created_at ?? now();
+        $isPastCutoff = \App\Support\StoreHours::isPastCutoff($transactionDate);
+        $pickupScheduleNote = \App\Support\StoreHours::pickupScheduleNote($transactionDate);
+
         return [
             'transaction_id' => $transaction->transaction_id,
             // Printed on the receipt and quoted in chat.
@@ -129,6 +142,19 @@ class TransactionPresenter
             'amount_due' => $amountDue->toDecimalString(),
             'amount_due_formatted' => '₱' . $amountDue->toFormattedString(),
             'points_redemption_value' => LoyaltyRules::PESOS_PER_REDEEMED_POINT,
+
+            'downpayment_required' => $isCash && !$amountDue->isZero(),
+            'downpayment_rate' => 0.50,
+            'downpayment_amount' => $downpaymentAmount->toDecimalString(),
+            'downpayment_amount_formatted' => '₱' . $downpaymentAmount->toFormattedString(),
+            'remaining_balance' => $remainingBalance->toDecimalString(),
+            'remaining_balance_formatted' => '₱' . $remainingBalance->toFormattedString(),
+            'downpayment_status' => $transaction->downpayment_status ?? ($isCash && !$amountDue->isZero() ? 'unpaid' : 'verified'),
+            'downpayment_proof' => $transaction->downpayment_proof,
+            'downpayment_verified_at' => $transaction->downpayment_verified_at,
+            'is_past_cutoff' => $isPastCutoff,
+            'cutoff_time' => \App\Support\StoreHours::cutoffLabel(),
+            'pickup_schedule_note' => $pickupScheduleNote,
 
             'payment_method' => $transaction->payment_method,
             'payment_status' => $transaction->payment_status,
