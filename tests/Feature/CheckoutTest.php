@@ -23,13 +23,13 @@ class CheckoutTest extends MarketplaceTestCase
             ->assertJsonPath('data.item_price', '250.00')
             ->assertJsonPath('data.available_points', 5)
             ->assertJsonPath('data.points_used', 2)
-            ->assertJsonPath('data.points_discount', '10.00')
-            ->assertJsonPath('data.amount_due', '240.00')
+            ->assertJsonPath('data.points_discount', '2.00')
+            ->assertJsonPath('data.amount_due', '248.00')
             ->assertJsonPath('data.reward_points_on_completion', 2);
     }
 
     #[Test]
-    public function two_points_give_a_ten_peso_discount(): void
+    public function two_points_give_a_two_peso_discount(): void
     {
         $item = $this->publishedItem('250', '180');
         $buyer = $this->student(5);
@@ -41,15 +41,15 @@ class CheckoutTest extends MarketplaceTestCase
                 'payment_method' => 'cash',
             ])
             ->assertStatus(201)
-            ->assertJsonPath('data.points_discount_amount', '10.00')
-            ->assertJsonPath('data.amount_due', '240.00');
+            ->assertJsonPath('data.points_discount_amount', '2.00')
+            ->assertJsonPath('data.amount_due', '248.00');
 
         // The points leave the wallet at checkout.
         $this->assertSame(3, $buyer->fresh()->wallet_points);
     }
 
     #[Test]
-    public function a_150_peso_item_with_2_points_leaves_140_due(): void
+    public function a_150_peso_item_with_2_points_leaves_148_due(): void
     {
         $item = $this->publishedItem('150', '100');
         $buyer = $this->student(2);
@@ -62,20 +62,20 @@ class CheckoutTest extends MarketplaceTestCase
             ])
             ->assertStatus(201)
             ->assertJsonPath('data.subtotal', '150.00')
-            ->assertJsonPath('data.points_discount_amount', '10.00')
-            ->assertJsonPath('data.amount_due', '140.00');
+            ->assertJsonPath('data.points_discount_amount', '2.00')
+            ->assertJsonPath('data.amount_due', '148.00');
     }
 
     #[Test]
-    public function a_50_peso_item_with_10_points_leaves_nothing_due(): void
+    public function a_50_peso_item_with_50_points_leaves_nothing_due(): void
     {
         $item = $this->publishedItem('50', '20');
-        $buyer = $this->student(10);
+        $buyer = $this->student(50);
 
         $response = $this->actingAs($buyer)
             ->postJson('/api/checkout', [
                 'item_id' => $item->item_id,
-                'points_used' => 10,
+                'points_used' => 50,
                 'payment_method' => 'cash',
             ])
             ->assertStatus(201)
@@ -122,8 +122,8 @@ class CheckoutTest extends MarketplaceTestCase
             ->assertStatus(201);
 
         $this->assertSame('0.00', $response->json('data.amount_due'));
-        // Only the 10 points the bill could absorb are spent; the rest stay.
-        $this->assertSame(90, $buyer->fresh()->wallet_points);
+        // Only the 50 points the bill could absorb are spent; the rest stay.
+        $this->assertSame(50, $buyer->fresh()->wallet_points);
     }
 
     #[Test]
@@ -207,8 +207,8 @@ class CheckoutTest extends MarketplaceTestCase
             ->assertStatus(201);
 
         $this->assertSame('250.00', $response->json('data.subtotal'));
-        $this->assertSame('240.00', $response->json('data.amount_due'));
-        $this->assertSame('10.00', $response->json('data.points_discount_amount'));
+        $this->assertSame('248.00', $response->json('data.amount_due'));
+        $this->assertSame('2.00', $response->json('data.points_discount_amount'));
         $this->assertSame(2, $response->json('data.reward_points_to_credit'));
 
         // The buyer comes from the token, not the body.
@@ -261,5 +261,28 @@ class CheckoutTest extends MarketplaceTestCase
             ->assertJsonPath('wallet_points', 5);
 
         $this->assertSame(Item::STATUS_PUBLIC, $item->fresh()->status);
+    }
+
+    #[Test]
+    public function cash_checkout_persists_50_percent_downpayment_and_remaining_balance(): void
+    {
+        $item = $this->publishedItem('200', '150');
+        $buyer = $this->student(0);
+
+        $response = $this->actingAs($buyer)->postJson('/api/checkout', [
+            'item_id' => $item->item_id,
+            'points_used' => 0,
+            'payment_method' => 'cash',
+        ])->assertStatus(201);
+
+        $response->assertJsonPath('data.downpayment_amount', '100.00')
+            ->assertJsonPath('data.remaining_balance', '100.00')
+            ->assertJsonPath('data.downpayment_status', 'unpaid');
+
+        $transaction = Transaction::where('item_id', $item->item_id)->first();
+        $this->assertNotNull($transaction);
+        $this->assertEquals('100.00', $transaction->downpayment_amount);
+        $this->assertEquals('100.00', $transaction->remaining_balance);
+        $this->assertEquals('unpaid', $transaction->downpayment_status);
     }
 }
