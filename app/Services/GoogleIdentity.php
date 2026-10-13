@@ -71,12 +71,6 @@ class GoogleIdentity
             throw new RuntimeException('That Google account has an unverified email address.');
         }
 
-        if (!str_ends_with($email, self::REQUIRED_DOMAIN)) {
-            throw new RuntimeException(
-                'Use your school account - it must end with ' . self::REQUIRED_DOMAIN . '.'
-            );
-        }
-
         $subject = trim($claims['sub'] ?? '');
 
         if ($subject === '') {
