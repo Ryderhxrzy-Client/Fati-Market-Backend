@@ -32,7 +32,7 @@ class AuthController extends Controller
         $validated = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'unique:users', 'ends_with:@student.fatima.edu.ph'],
+            'email' => ['required', 'email', 'unique:users'],
             'password' => [
                 'required',
                 'string',
@@ -76,7 +76,7 @@ class AuthController extends Controller
             $this->verification->send($validated['email'], $validated['first_name']);
 
             return response()->json([
-                'message' => 'Almost there - we sent a 6-digit code to your school email.',
+                'message' => 'Almost there - we sent a 6-digit verification code to your email.',
                 'data' => [
                     'user_id' => $result['user_id'],
                     'student_id' => $result['student_id'],
