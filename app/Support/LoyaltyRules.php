@@ -14,8 +14,8 @@ final class LoyaltyRules
     /** A buyer earns 1 reward point per PHP 100.00 of public selling price. */
     public const PESOS_PER_REWARD_POINT = 100;
 
-    /** A redeemed point is worth a PHP 5.00 discount. */
-    public const PESOS_PER_REDEEMED_POINT = 5;
+    /** A redeemed point is worth a PHP 1.00 discount. */
+    public const PESOS_PER_REDEEMED_POINT = 1;
 
     private const CENTAVOS_PER_REWARD_POINT = self::PESOS_PER_REWARD_POINT * 100;
 
@@ -35,7 +35,7 @@ final class LoyaltyRules
         return intdiv($publicPrice->centavos(), self::CENTAVOS_PER_REWARD_POINT);
     }
 
-    /** pointsDiscount = pointsUsed * PHP 5.00 */
+    /** pointsDiscount = pointsUsed * PHP 1.00 */
     public static function discountFor(int $pointsUsed): Money
     {
         if ($pointsUsed <= 0) {
