@@ -38,30 +38,30 @@ class LoyaltyRulesTest extends TestCase
         $this->assertSame($expected, LoyaltyRules::rewardPointsFor(Money::fromPesos($price)));
     }
 
-    // ── pointsDiscount = pointsUsed * PHP 5 ──────────────────────────────
+    // ── pointsDiscount = pointsUsed * PHP 1 ──────────────────────────────
 
     #[Test]
-    public function it_values_each_redeemed_point_at_five_pesos(): void
+    public function it_values_each_redeemed_point_at_one_peso(): void
     {
         $this->assertSame('0.00', LoyaltyRules::discountFor(0)->toDecimalString());
-        $this->assertSame('10.00', LoyaltyRules::discountFor(2)->toDecimalString());
-        $this->assertSame('50.00', LoyaltyRules::discountFor(10)->toDecimalString());
+        $this->assertSame('2.00', LoyaltyRules::discountFor(2)->toDecimalString());
+        $this->assertSame('10.00', LoyaltyRules::discountFor(10)->toDecimalString());
     }
 
     // ── finalAmountDue = max(itemPrice - discount, 0) ────────────────────
 
     #[Test]
-    public function a_150_peso_item_with_2_points_costs_140(): void
+    public function a_150_peso_item_with_2_points_costs_148(): void
     {
         $due = LoyaltyRules::amountDue(Money::fromPesos('150.00'), 2);
 
-        $this->assertSame('140.00', $due->toDecimalString());
+        $this->assertSame('148.00', $due->toDecimalString());
     }
 
     #[Test]
-    public function a_50_peso_item_with_10_points_costs_nothing(): void
+    public function a_50_peso_item_with_50_points_costs_nothing(): void
     {
-        $due = LoyaltyRules::amountDue(Money::fromPesos('50.00'), 10);
+        $due = LoyaltyRules::amountDue(Money::fromPesos('50.00'), 50);
 
         $this->assertSame('0.00', $due->toDecimalString());
     }
@@ -69,7 +69,7 @@ class LoyaltyRulesTest extends TestCase
     #[Test]
     public function the_discount_can_never_produce_a_negative_bill(): void
     {
-        // 100 points is PHP 500 of discount against a PHP 50 item.
+        // 100 points is PHP 100 of discount against a PHP 50 item.
         $due = LoyaltyRules::amountDue(Money::fromPesos('50.00'), 100);
 
         $this->assertFalse($due->isNegative());
@@ -79,10 +79,10 @@ class LoyaltyRulesTest extends TestCase
     #[Test]
     public function it_caps_the_points_worth_spending_at_the_bill(): void
     {
-        // PHP 50 needs 10 points; spending more would simply be discarded.
-        $this->assertSame(10, LoyaltyRules::maxUsefulPoints(Money::fromPesos('50.00')));
-        // PHP 12 rounds up to 3 points, since 2 would leave PHP 2 owing.
-        $this->assertSame(3, LoyaltyRules::maxUsefulPoints(Money::fromPesos('12.00')));
+        // PHP 50 needs 50 points; spending more would simply be discarded.
+        $this->assertSame(50, LoyaltyRules::maxUsefulPoints(Money::fromPesos('50.00')));
+        // PHP 12 rounds up to 12 points.
+        $this->assertSame(12, LoyaltyRules::maxUsefulPoints(Money::fromPesos('12.00')));
         $this->assertSame(0, LoyaltyRules::maxUsefulPoints(Money::zero()));
     }
 
