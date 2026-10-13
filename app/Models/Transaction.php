@@ -88,6 +88,11 @@ class Transaction extends Model
         'points_used',
         'points_discount_amount',
         'amount_due',
+        'downpayment_amount',
+        'remaining_balance',
+        'downpayment_status',
+        'downpayment_proof',
+        'downpayment_verified_at',
         'reward_points_earned',
         'payment_method',
         'payment_proof',
@@ -124,6 +129,9 @@ class Transaction extends Model
         'subtotal' => 'decimal:2',
         'points_discount_amount' => 'decimal:2',
         'amount_due' => 'decimal:2',
+        'downpayment_amount' => 'decimal:2',
+        'remaining_balance' => 'decimal:2',
+        'downpayment_verified_at' => 'datetime',
         'transaction_date' => 'datetime',
         'payment_proof_submitted_at' => 'datetime',
         'payment_verified_at' => 'datetime',
@@ -147,6 +155,16 @@ class Transaction extends Model
     public function amountDueMoney(): Money
     {
         return Money::fromPesos($this->amount_due);
+    }
+
+    public function downpaymentAmountMoney(): Money
+    {
+        return Money::fromPesos($this->downpayment_amount ?? 0);
+    }
+
+    public function remainingBalanceMoney(): Money
+    {
+        return Money::fromPesos($this->remaining_balance ?? 0);
     }
 
     // ── Predicates ───────────────────────────────────────────────────────
