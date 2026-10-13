@@ -15,12 +15,12 @@ use Illuminate\Support\Facades\Log;
  */
 class PhotoUploader
 {
-    public const MAX_BYTES = 5 * 1024 * 1024;
+    public const MAX_BYTES = 20 * 1024 * 1024;
 
-    public const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png'];
+    public const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
     /** Payment proofs may also be a PDF receipt exported from GCash. */
-    public const ALLOWED_PROOF_MIME_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+    public const ALLOWED_PROOF_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
     /**
      * Validate a set of uploaded images.
@@ -60,7 +60,7 @@ class PhotoUploader
             if ($file->getSize() > self::MAX_BYTES) {
                 return [
                     'message' => 'File too large',
-                    'error' => 'Maximum file size is 5MB',
+                    'error' => 'Maximum file size is 20MB',
                 ];
             }
         }
