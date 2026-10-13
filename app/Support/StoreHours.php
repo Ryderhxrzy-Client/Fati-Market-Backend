@@ -100,7 +100,53 @@ class StoreHours
         return null;
     }
 
-    /** What the app needs to draw the calendar and its time slots. */
+    /** Cutoff time string, e.g. "17:00" (5:00 PM) */
+    public static function cutoffTime(): string
+    {
+        return self::closeTime();
+    }
+
+    /** Display label for cutoff time, e.g. "5:00 PM" */
+    public static function cutoffLabel(): string
+    {
+        return self::display(self::cutoffTime());
+    }
+
+    /**
+     * Whether the current moment (or a given time) is past the store's transaction cutoff.
+     * At or after 5:00 PM (17:00), or on non-operational days/hours.
+     */
+    public static function isPastCutoff(?Carbon $now = null): bool
+    {
+        $timezone = config('app.timezone');
+        $now = ($now ?? Carbon::now($timezone))->copy()->setTimezone($timezone);
+        $time = $now->format('H:i');
+        $dayOfWeek = $now->dayOfWeekIso;
+
+        if (!in_array($dayOfWeek, self::openDays(), true)) {
+            return true;
+        }
+
+        return $time >= self::cutoffTime() || $time < self::openTime();
+    }
+
+    /**
+     * Automated pickup/meetup timeframe note based on cutoff.
+     */
+    public static function pickupScheduleNote(?Carbon $now = null): string
+    {
+        $timezone = config('app.timezone');
+        $now = ($now ?? Carbon::now($timezone))->copy()->setTimezone($timezone);
+        $cutoff = self::cutoffLabel();
+
+        if (self::isPastCutoff($now)) {
+            return "Order placed after the {$cutoff} cutoff. Meet-up and store pickup scheduled for tomorrow at Ofelia's store during store hours (" . self::label() . ').';
+        }
+
+        return "Order placed within store hours. Meet-up and store pickup available today before {$cutoff} at Ofelia's store.";
+    }
+
+    /** What the app needs to draw the calendar, time slots and cutoff info. */
     public static function toArray(): array
     {
         return [
@@ -109,6 +155,10 @@ class StoreHours
             'open_days' => self::openDays(),
             'slot_minutes' => self::slotMinutes(),
             'hours_label' => self::label(),
+            'cutoff_time' => self::cutoffTime(),
+            'cutoff_label' => self::cutoffLabel(),
+            'is_past_cutoff' => self::isPastCutoff(),
+            'pickup_schedule_note' => self::pickupScheduleNote(),
             'timezone' => config('app.timezone'),
         ];
     }
