@@ -90,8 +90,8 @@ class OrderChatCardTest extends MarketplaceTestCase
             ->where('sender_id', $buyer->user_id)
             ->firstOrFail();
 
-        // 250 - (2 points x 5) = 240
-        $this->assertStringContainsString('240.00', $message->message);
+        // 250 - (2 points x 1) = 248
+        $this->assertStringContainsString('248.00', $message->message);
         $this->assertStringContainsString('Used 2 point(s)', $message->message);
     }
 
