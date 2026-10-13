@@ -65,12 +65,22 @@ class CheckoutService
         $discount = LoyaltyRules::discountFor($pointsUsed);
         $amountDue = $itemPrice->minus($discount)->clampAtZero();
 
+        $downpaymentRate = 0.50;
+        $downpaymentAmount = Money::fromCentavos((int) round($amountDue->centavos() * $downpaymentRate));
+        $remainingBalance = $amountDue->minus($downpaymentAmount);
+
         return [
             'item_price' => $itemPrice,
             'available_points' => $available,
             'points_used' => $pointsUsed,
             'points_discount' => $discount,
             'amount_due' => $amountDue,
+            'downpayment_rate' => $downpaymentRate,
+            'downpayment_amount' => $downpaymentAmount,
+            'remaining_balance' => $remainingBalance,
+            'is_past_cutoff' => \App\Support\StoreHours::isPastCutoff(),
+            'cutoff_time' => \App\Support\StoreHours::cutoffLabel(),
+            'pickup_schedule_note' => \App\Support\StoreHours::pickupScheduleNote(),
             'reward_points' => LoyaltyRules::rewardPointsFor($itemPrice),
             'max_usable_points' => min($available, LoyaltyRules::maxUsefulPoints($itemPrice)),
             'is_full_points' => $amountDue->isZero(),
@@ -105,6 +115,9 @@ class CheckoutService
 
             $isFullPoints = $quote['is_full_points'];
             $method = $isFullPoints ? Transaction::METHOD_POINTS_FULL : $paymentMethod;
+            $isCash = $method === Transaction::METHOD_CASH;
+            $downpaymentAmount = $isCash ? $quote['downpayment_amount'] : Money::zero();
+            $remainingBalance = $isCash ? $quote['remaining_balance'] : Money::zero();
 
             $transaction = Transaction::create([
                 'item_id' => $locked->item_id,
@@ -114,6 +127,9 @@ class CheckoutService
                 'points_used' => $quote['points_used'],
                 'points_discount_amount' => $quote['points_discount']->toDecimalString(),
                 'amount_due' => $quote['amount_due']->toDecimalString(),
+                'downpayment_amount' => $downpaymentAmount->toDecimalString(),
+                'remaining_balance' => $remainingBalance->toDecimalString(),
+                'downpayment_status' => $isCash && !$downpaymentAmount->isZero() ? 'unpaid' : 'verified',
                 // Locked in now so a later admin price change cannot alter the
                 // reward this buyer was promised at checkout.
                 'reward_points_earned' => $quote['reward_points'],
