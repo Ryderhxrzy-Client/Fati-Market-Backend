@@ -46,6 +46,11 @@ class PayMongoController extends Controller
             return response()->json(['message' => 'Payment for this order has already been verified.'], 409);
         }
 
+        if ($transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->downpayment_status === 'verified') {
+            return response()->json(['message' => 'The 50% downpayment for this order is already paid.'], 409);
+        }
+
         if ($transaction->amount_due <= 0) {
             return response()->json(['message' => 'This order does not require payment.'], 400);
         }
