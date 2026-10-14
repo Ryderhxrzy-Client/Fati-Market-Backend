@@ -205,7 +205,21 @@ class CheckoutService
                 return $locked;
             }
 
-            $locked->update(['payment_method' => $paymentMethod]);
+            $updates = ['payment_method' => $paymentMethod];
+
+            // Older/full-online orders may not have a deposit split stored.
+            // Whenever the buyer switches to cash-on-pickup, derive and lock
+            // the mandatory 50/50 split from the authoritative amount due.
+            if ($paymentMethod === Transaction::METHOD_CASH) {
+                $amountDue = $locked->amountDueMoney();
+                $downpayment = Money::fromCentavos((int) round($amountDue->centavos() * 0.50));
+                $updates['downpayment_amount'] = $downpayment->toDecimalString();
+                $updates['remaining_balance'] = $amountDue->minus($downpayment)->toDecimalString();
+                $updates['downpayment_status'] = $downpayment->isZero() ? 'verified' : 'unpaid';
+                $updates['downpayment_verified_at'] = null;
+            }
+
+            $locked->update($updates);
             $changed = true;
 
             return $locked->fresh();
