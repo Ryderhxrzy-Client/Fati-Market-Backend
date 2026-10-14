@@ -125,8 +125,10 @@ class PayMongoWebhookController extends Controller
                 ], true) ? Transaction::STATUS_RESERVED : $locked->status;
 
                 $updates = [
-                    'payment_status' => Transaction::PAYMENT_VERIFIED,
-                    'payment_verified_at' => now(),
+                    'payment_status' => $isCashDownpayment
+                        ? Transaction::PAYMENT_PARTIALLY_PAID
+                        : Transaction::PAYMENT_VERIFIED,
+                    'payment_verified_at' => $isCashDownpayment ? null : now(),
                     'payment_method' => $isCashDownpayment
                         ? Transaction::METHOD_CASH
                         : Transaction::METHOD_PAYMONGO,
