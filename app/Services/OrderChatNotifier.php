@@ -58,6 +58,16 @@ class OrderChatNotifier
                 . '(−₱' . $transaction->discountMoney()->toFormattedString() . ')';
         }
 
+        if ($transaction->payment_method === Transaction::METHOD_CASH
+            && (float) $transaction->downpayment_amount > 0) {
+            $lines[] = 'PayMongo downpayment: ₱'
+                . $transaction->downpaymentAmountMoney()->toFormattedString()
+                . ' (unpaid)';
+            $lines[] = 'Cash due at pickup: ₱'
+                . $transaction->remainingBalanceMoney()->toFormattedString()
+                . ' (unpaid)';
+        }
+
         $lines[] = self::paymentStateSentence($transaction);
 
         $this->post(
@@ -311,7 +321,11 @@ class OrderChatNotifier
     {
         return match ($transaction->payment_method) {
             Transaction::METHOD_GCASH => 'GCash',
+            Transaction::METHOD_PAYMONGO => 'PayMongo (GCash)',
             Transaction::METHOD_POINTS_FULL => 'points',
+            Transaction::METHOD_CASH => (float) $transaction->downpayment_amount > 0
+                ? '50% PayMongo downpayment + 50% cash on pickup'
+                : 'cash at the store',
             default => 'cash at the store',
         };
     }
@@ -326,11 +340,19 @@ class OrderChatNotifier
     public static function paymentStateSentence(Transaction $transaction): string
     {
         return match (true) {
+            $transaction->payment_status === Transaction::PAYMENT_PARTIALLY_PAID =>
+                'Partially paid: ₱' . $transaction->downpaymentAmountMoney()->toFormattedString()
+                . ' received via PayMongo; ₱'
+                . $transaction->remainingBalanceMoney()->toFormattedString()
+                . ' remains unpaid in cash at pickup.',
             $transaction->payment_status === Transaction::PAYMENT_VERIFIED => 'Payment confirmed.',
             $transaction->payment_status === Transaction::PAYMENT_REJECTED => 'My payment was declined.',
             $transaction->payment_status === Transaction::PAYMENT_PROOF_SUBMITTED => 'Receipt sent - waiting for it to be checked.',
             $transaction->payment_method === Transaction::METHOD_GCASH => 'Not paid yet - I will send my GCash receipt here.',
             $transaction->payment_method === Transaction::METHOD_POINTS_FULL => 'Fully covered by my points.',
+            $transaction->payment_method === Transaction::METHOD_CASH
+                && (float) $transaction->downpayment_amount > 0 =>
+                'Downpayment not paid yet - I will pay 50% through PayMongo first, then the remaining cash at pickup.',
             default => 'Not paid yet - I will pay in cash at the store.',
         };
     }
