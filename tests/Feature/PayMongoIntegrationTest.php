@@ -68,6 +68,110 @@ class PayMongoIntegrationTest extends MarketplaceTestCase
         $this->assertEquals('cs_test_session_123', $transaction->paymongo_checkout_session_id);
     }
 
+    public function test_cash_checkout_charges_only_50_percent_downpayment_and_keeps_cash_method()
+    {
+        $buyer = $this->student();
+        $item = $this->publishedItem('500.00');
+
+        $transaction = Transaction::create([
+            'item_id' => $item->item_id,
+            'buyer_id' => $buyer->user_id,
+            'seller_id' => $item->seller_id,
+            'subtotal' => '500.00',
+            'amount_due' => '500.00',
+            'downpayment_amount' => '250.00',
+            'remaining_balance' => '250.00',
+            'downpayment_status' => 'unpaid',
+            'payment_method' => Transaction::METHOD_CASH,
+            'payment_status' => Transaction::PAYMENT_UNPAID,
+            'status' => Transaction::STATUS_PENDING_PAYMENT,
+        ]);
+
+        Http::fake([
+            'https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+                'data' => [
+                    'id' => 'cs_test_dp_123',
+                    'attributes' => ['checkout_url' => 'https://checkout.paymongo.com/cs_test_dp_123'],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($buyer, 'sanctum')
+            ->postJson('/api/paymongo/checkout', ['transaction_id' => $transaction->transaction_id]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.amount_due', '250.00')
+            ->assertJsonPath('data.payment_type', 'downpayment');
+
+        Http::assertSent(fn ($request) =>
+            $request->url() === 'https://api.paymongo.com/v1/checkout_sessions'
+            && $request['data']['attributes']['amount'] === 25000
+            && $request['data']['attributes']['line_items'][0]['amount'] === 25000
+        );
+
+        $this->assertSame(Transaction::METHOD_CASH, $transaction->fresh()->payment_method);
+    }
+
+    public function test_cash_downpayment_webhook_verifies_deposit_and_keeps_remaining_cash_balance()
+    {
+        $buyer = $this->student();
+        $item = $this->publishedItem('500.00');
+
+        $transaction = Transaction::create([
+            'item_id' => $item->item_id,
+            'buyer_id' => $buyer->user_id,
+            'seller_id' => $item->seller_id,
+            'subtotal' => '500.00',
+            'amount_due' => '500.00',
+            'downpayment_amount' => '250.00',
+            'remaining_balance' => '250.00',
+            'downpayment_status' => 'unpaid',
+            'payment_method' => Transaction::METHOD_CASH,
+            'payment_status' => Transaction::PAYMENT_UNPAID,
+            'status' => Transaction::STATUS_PENDING_PAYMENT,
+            'paymongo_checkout_session_id' => 'cs_test_dp_paid',
+        ]);
+
+        $timestamp = time();
+        $payload = [
+            'data' => [
+                'id' => 'evt_test_dp_paid',
+                'attributes' => [
+                    'type' => 'checkout_session.payment.paid',
+                    'data' => [
+                        'id' => 'cs_test_dp_paid',
+                        'attributes' => [
+                            'reference_number' => (string) $transaction->transaction_id,
+                            'amount' => 25000,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $rawBody = json_encode($payload);
+        $signature = hash_hmac('sha256', $timestamp . '.' . $rawBody, 'whsk_test_mock_secret');
+
+        $response = $this->call(
+            'POST',
+            '/api/paymongo/webhook',
+            [],
+            [],
+            [],
+            ['HTTP_PAYMONGO_SIGNATURE' => "t={$timestamp},te={$signature}"],
+            $rawBody
+        );
+
+        $response->assertOk();
+
+        $transaction->refresh();
+        $this->assertSame(Transaction::METHOD_CASH, $transaction->payment_method);
+        $this->assertSame('verified', $transaction->downpayment_status);
+        $this->assertSame(Transaction::PAYMENT_VERIFIED, $transaction->payment_status);
+        $this->assertEquals('250.00', $transaction->remaining_balance);
+        $this->assertSame(Transaction::STATUS_RESERVED, $transaction->status);
+    }
+
     public function test_valid_webhook_verifies_payment_and_updates_order()
     {
         $buyer = $this->student();
