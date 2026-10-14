@@ -155,7 +155,9 @@ class PayMongoWebhookController extends Controller
                     $this->notifier->outcome(
                         $fresh,
                         $item,
-                        '✅ Your online payment via PayMongo has been verified. The item is reserved for you.'
+                        $isCashDownpayment
+                            ? 'Partially paid: the 50% PayMongo downpayment was received. The remaining cash balance is unpaid and due at pickup.'
+                            : 'Your online payment via PayMongo has been verified. The item is reserved for you.'
                     );
                 }
             });
