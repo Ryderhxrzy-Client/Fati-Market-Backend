@@ -80,8 +80,14 @@ class PayMongoWebhookController extends Controller
             return response()->json(['error' => 'Order not found.'], 404);
         }
 
-        // Idempotency check: verify if event was already processed or payment is already verified
-        if ($transaction->payment_status === Transaction::PAYMENT_VERIFIED || $transaction->paymongo_event_id === $eventId) {
+        $cashDownpaymentPending = $transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->downpayment_status !== 'verified'
+            && (float) $transaction->downpayment_amount > 0;
+
+        // A cash order can be payment-verified here while still retaining a
+        // balance at pickup; all other verified orders are already settled.
+        if ($transaction->paymongo_event_id === $eventId
+            || (!$cashDownpaymentPending && $transaction->payment_status === Transaction::PAYMENT_VERIFIED)) {
             Log::info("PayMongo Webhook: Event [{$eventId}] already processed for Transaction #{$transaction->transaction_id}.");
             return response()->json(['message' => 'Webhook event already processed.'], 200);
         }
@@ -93,14 +99,23 @@ class PayMongoWebhookController extends Controller
                     ->firstOrFail();
 
                 // Re-verify idempotency inside DB lock
-                if ($locked->payment_status === Transaction::PAYMENT_VERIFIED || $locked->paymongo_event_id === $eventId) {
+                $isCashDownpayment = $locked->payment_method === Transaction::METHOD_CASH
+                    && $locked->downpayment_status !== 'verified'
+                    && (float) $locked->downpayment_amount > 0;
+
+                if ($locked->paymongo_event_id === $eventId
+                    || (!$isCashDownpayment && $locked->payment_status === Transaction::PAYMENT_VERIFIED)) {
                     return;
                 }
 
                 if ($paidAmountInCentavos !== null) {
-                    $expectedCentavos = (int) round($locked->amount_due * 100);
+                    $expectedAmount = $isCashDownpayment
+                        ? $locked->downpayment_amount
+                        : $locked->amount_due;
+                    $expectedCentavos = (int) round($expectedAmount * 100);
                     if ($paidAmountInCentavos < $expectedCentavos) {
                         Log::warning("PayMongo Webhook: Paid amount ({$paidAmountInCentavos} centavos) is less than amount due ({$expectedCentavos} centavos) for Transaction #{$locked->transaction_id}.");
+                        throw new RuntimeException('PayMongo payment amount is below the required amount.');
                     }
                 }
 
@@ -109,15 +124,24 @@ class PayMongoWebhookController extends Controller
                     Transaction::STATUS_PAYMENT_PROOF_SUBMITTED,
                 ], true) ? Transaction::STATUS_RESERVED : $locked->status;
 
-                $locked->update([
+                $updates = [
                     'payment_status' => Transaction::PAYMENT_VERIFIED,
                     'payment_verified_at' => now(),
-                    'payment_method' => Transaction::METHOD_PAYMONGO,
+                    'payment_method' => $isCashDownpayment
+                        ? Transaction::METHOD_CASH
+                        : Transaction::METHOD_PAYMONGO,
                     'payment_reference' => $checkoutSessionId ?? $locked->payment_reference,
                     'paymongo_checkout_session_id' => $checkoutSessionId ?? $locked->paymongo_checkout_session_id,
                     'paymongo_event_id' => $eventId,
                     'status' => $newStatus,
-                ]);
+                ];
+
+                if ($isCashDownpayment) {
+                    $updates['downpayment_status'] = 'verified';
+                    $updates['downpayment_verified_at'] = now();
+                }
+
+                $locked->update($updates);
 
                 $fresh = $locked->fresh();
 
