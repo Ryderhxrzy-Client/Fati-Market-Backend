@@ -55,6 +55,7 @@ class Transaction extends Model
     ];
 
     public const PAYMENT_UNPAID = 'unpaid';
+    public const PAYMENT_PARTIALLY_PAID = 'partially_paid';
     public const PAYMENT_PROOF_SUBMITTED = 'proof_submitted';
     public const PAYMENT_VERIFIED = 'verified';
     public const PAYMENT_REJECTED = 'rejected';
