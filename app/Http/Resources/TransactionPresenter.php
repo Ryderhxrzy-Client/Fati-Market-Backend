@@ -109,6 +109,12 @@ class TransactionPresenter
         $remainingBalance = ($transaction->remaining_balance !== null && (float) $transaction->remaining_balance > 0)
             ? $transaction->remainingBalanceMoney()
             : ($isCash ? $amountDue->minus($downpaymentAmount) : Money::zero());
+        $effectivePaymentStatus = $isCash
+            && $transaction->downpayment_status === 'verified'
+            && !$remainingBalance->isZero()
+            && $transaction->status !== Transaction::STATUS_COMPLETED
+                ? Transaction::PAYMENT_PARTIALLY_PAID
+                : $transaction->payment_status;
 
         $transactionDate = $transaction->transaction_date ?? $transaction->created_at ?? now();
         $isPastCutoff = \App\Support\StoreHours::isPastCutoff($transactionDate);
@@ -157,7 +163,7 @@ class TransactionPresenter
             'pickup_schedule_note' => $pickupScheduleNote,
 
             'payment_method' => $transaction->payment_method,
-            'payment_status' => $transaction->payment_status,
+            'payment_status' => $effectivePaymentStatus,
             'pickup_status' => $transaction->pickup_status,
             'status' => $transaction->status,
 
