@@ -57,8 +57,19 @@ class PayMongoController extends Controller
                 $validated['cancel_url'] ?? null
             );
 
+            $isCashDownpayment = $transaction->payment_method === Transaction::METHOD_CASH
+                && $transaction->downpayment_status !== 'verified'
+                && (float) $transaction->downpayment_amount > 0;
+            $chargedAmount = $isCashDownpayment
+                ? $transaction->downpayment_amount
+                : $transaction->amount_due;
+
             $transaction->update([
-                'payment_method' => Transaction::METHOD_PAYMONGO,
+                // A 50% deposit does not turn the remaining cash-on-pickup
+                // balance into a fully-online order.
+                'payment_method' => $isCashDownpayment
+                    ? Transaction::METHOD_CASH
+                    : Transaction::METHOD_PAYMONGO,
                 'payment_reference' => $session['id'],
                 'paymongo_checkout_session_id' => $session['id'],
             ]);
@@ -69,7 +80,8 @@ class PayMongoController extends Controller
                     'checkout_session_id' => $session['id'],
                     'checkout_url' => $session['checkout_url'],
                     'transaction_id' => $transaction->transaction_id,
-                    'amount_due' => $transaction->amount_due,
+                    'amount_due' => $chargedAmount,
+                    'payment_type' => $isCashDownpayment ? 'downpayment' : 'full_payment',
                 ],
             ], 201);
 
