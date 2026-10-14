@@ -70,14 +70,25 @@ class PayMongoService
         ?string $cancelUrl = null
     ): array {
         $secretKey = $this->getSecretKey();
-        $amountInCentavos = (int) round($transaction->amount_due * 100);
+        $isCashDownpayment = $transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->downpayment_status !== 'verified'
+            && (float) $transaction->downpayment_amount > 0;
+        $payableAmount = $isCashDownpayment
+            ? $transaction->downpayment_amount
+            : $transaction->amount_due;
+        $amountInCentavos = (int) round($payableAmount * 100);
 
         if ($amountInCentavos <= 0) {
             throw new RuntimeException('Cannot create PayMongo checkout session for zero or negative amount.');
         }
 
         $itemTitle = $transaction->item?->title ?? "Order #{$transaction->transaction_id}";
-        $description = "Payment for Order #{$transaction->transaction_id} - {$itemTitle}";
+        $description = $isCashDownpayment
+            ? "50% downpayment for Order #{$transaction->transaction_id} - {$itemTitle}"
+            : "Payment for Order #{$transaction->transaction_id} - {$itemTitle}";
+        $lineItemName = $isCashDownpayment
+            ? "50% downpayment - {$itemTitle}"
+            : $itemTitle;
 
         $attributes = [
             'amount' => $amountInCentavos,
@@ -87,7 +98,7 @@ class PayMongoService
                 [
                     'amount' => $amountInCentavos,
                     'currency' => 'PHP',
-                    'name' => mb_substr($itemTitle, 0, 255),
+                    'name' => mb_substr($lineItemName, 0, 255),
                     'quantity' => 1,
                 ],
             ],
