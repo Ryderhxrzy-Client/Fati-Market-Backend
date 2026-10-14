@@ -95,7 +95,21 @@ class TransactionController extends Controller
             return response()->json(['message' => 'This is not your order.'], 403);
         }
 
-        $issued = $transaction->payment_verified_at ?? $transaction->completed_at;
+        $issued = $transaction->payment_verified_at
+            ?? $transaction->downpayment_verified_at
+            ?? $transaction->completed_at;
+        $isPartialCashPayment = $transaction->payment_method === Transaction::METHOD_CASH
+            && $transaction->downpayment_status === 'verified'
+            && (float) $transaction->remaining_balance > 0
+            && $transaction->status !== Transaction::STATUS_COMPLETED;
+        $amountPaid = $isPartialCashPayment
+            ? $transaction->downpaymentAmountMoney()
+            : ($transaction->payment_status === Transaction::PAYMENT_VERIFIED
+                ? $transaction->amountDueMoney()
+                : \App\Support\Money::zero());
+        $remainingBalance = $isPartialCashPayment
+            ? $transaction->remainingBalanceMoney()
+            : \App\Support\Money::zero();
 
         return response()->json([
             'message' => 'Receipt retrieved successfully',
@@ -104,7 +118,8 @@ class TransactionController extends Controller
                 'issued_at' => $issued,
                 // A receipt for an unverified payment would be misleading, so
                 // it is marked provisional rather than withheld.
-                'is_official' => $transaction->payment_status === Transaction::PAYMENT_VERIFIED,
+                'is_official' => !$isPartialCashPayment
+                    && $transaction->payment_status === Transaction::PAYMENT_VERIFIED,
                 'status' => $transaction->status,
                 'status_label' => str_replace('_', ' ', $transaction->status),
 
@@ -128,13 +143,16 @@ class TransactionController extends Controller
                     ['label' => 'Item price', 'value' => $transaction->subtotalMoney()->toDecimalString()],
                     ['label' => 'Points used', 'value' => (string) $transaction->points_used],
                     ['label' => 'Points discount', 'value' => '-' . $transaction->discountMoney()->toDecimalString()],
-                    ['label' => 'Amount paid', 'value' => $transaction->amountDueMoney()->toDecimalString()],
+                    ['label' => 'Amount paid', 'value' => $amountPaid->toDecimalString()],
+                    ['label' => 'Remaining balance', 'value' => $remainingBalance->toDecimalString()],
                 ],
 
                 'subtotal' => $transaction->subtotalMoney()->toDecimalString(),
                 'points_used' => $transaction->points_used,
                 'points_discount_amount' => $transaction->discountMoney()->toDecimalString(),
-                'amount_paid' => $transaction->amountDueMoney()->toDecimalString(),
+                'amount_paid' => $amountPaid->toDecimalString(),
+                'remaining_balance' => $remainingBalance->toDecimalString(),
+                'remaining_balance_status' => $isPartialCashPayment ? 'unpaid' : 'paid',
                 'reward_points_earned' => $transaction->status === Transaction::STATUS_COMPLETED
                     ? $transaction->reward_points_earned
                     : 0,
@@ -142,11 +160,17 @@ class TransactionController extends Controller
                 'payment_method' => $transaction->payment_method,
                 'payment_method_label' => match ($transaction->payment_method) {
                     Transaction::METHOD_GCASH => 'GCash',
+                    Transaction::METHOD_PAYMONGO => 'PayMongo (GCash)',
                     Transaction::METHOD_POINTS_FULL => 'Paid fully with points',
+                    Transaction::METHOD_CASH => $isPartialCashPayment
+                        ? '50% PayMongo downpayment + 50% cash on pickup'
+                        : 'Cash at store',
                     default => 'Cash at store',
                 },
                 'payment_reference' => $transaction->payment_reference,
-                'payment_status' => $transaction->payment_status,
+                'payment_status' => $isPartialCashPayment
+                    ? Transaction::PAYMENT_PARTIALLY_PAID
+                    : $transaction->payment_status,
                 'payment_verified_at' => $transaction->payment_verified_at,
                 'completed_at' => $transaction->completed_at,
             ],
