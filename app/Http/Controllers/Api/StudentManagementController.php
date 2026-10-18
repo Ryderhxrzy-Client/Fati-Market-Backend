@@ -68,8 +68,8 @@ class StudentManagementController extends Controller
     }
 
     /**
-     * Get all students (verified and unverified) with optional status filter
-     * GET /api/admin/students?status=pending|approved|declined
+     * Get all users (all registered users) with optional status filter
+     * GET /api/admin/students?status=pending|approved|declined|blocked|active
      */
     public function getAllStudents(Request $request)
     {
@@ -77,68 +77,72 @@ class StudentManagementController extends Controller
             // Check if user is admin
             if ($request->user()->role !== 'admin') {
                 return response()->json([
-                    'message' => 'Unauthorized. Only admins can view student management.',
+                    'message' => 'Unauthorized. Only admins can view user management.',
                 ], 403);
             }
 
             // Get status filter from query parameter
             $statusFilter = $request->query('status');
 
-            // Validate status filter
-            $validStatuses = ['pending', 'approved', 'declined', 'blocked'];
-            if ($statusFilter && !in_array($statusFilter, $validStatuses)) {
-                return response()->json([
-                    'message' => 'Invalid status filter. Must be: pending, approved, declined, or blocked.',
-                ], 400);
-            }
+            // Build query: fetch all non-admin users
+            $users = User::with([
+                'studentInfo',
+                'authIdentities',
+                'verification',
+            ])
+                ->where('role', '!=', User::ROLE_ADMIN)
+                ->latest('created_at')
+                ->get();
 
-            // Build query
-            $query = StudentVerification::with([
-                'user' => function ($query) {
-                    $query->select('user_id', 'email', 'wallet_points', 'is_active', 'created_at');
-                },
-                'user.studentInfo' => function ($query) {
-                    $query->select('user_id', 'first_name', 'last_name', 'profile_picture');
-                }
-            ]);
+            // Map and attach registration_method and status
+            $allStudents = $users->map(function ($user) {
+                $verification = $user->verification;
+                $isGoogle = $user->authIdentities->where('provider', 'google')->isNotEmpty();
+                $registrationMethod = $isGoogle ? 'Google' : 'Email & Password';
+                $isBlocked = !$user->is_active || ($verification?->status === 'blocked');
+                $status = $isBlocked ? 'blocked' : ($verification?->status ?? 'active');
 
-            // Apply status filter
+                return [
+                    'student_verification_id' => $verification?->student_verification_id ?? $user->user_id,
+                    'user_id' => $user->user_id,
+                    'email' => $user->email,
+                    'first_name' => $user->studentInfo?->first_name ?? 'User',
+                    'last_name' => $user->studentInfo?->last_name ?? ('#' . $user->user_id),
+                    'profile_picture' => $user->studentInfo?->profile_picture,
+                    'verification_document' => $verification?->link,
+                    'verification_type' => $verification?->verification_use ?? 'none',
+                    'is_verified' => (bool) ($user->email_verified_at !== null || $verification?->is_verified || $isGoogle),
+                    'wallet_points' => (int) ($user->wallet_points ?? 0),
+                    'is_active' => (bool) $user->is_active,
+                    'registered_date' => $user->created_at,
+                    'registration_method' => $registrationMethod,
+                    'status' => $status,
+                    'reason' => $verification?->reason,
+                ];
+            });
+
+            // Apply status filter if provided
             if ($statusFilter) {
-                $query->where('status', $statusFilter);
+                if ($statusFilter === 'blocked') {
+                    $allStudents = $allStudents->where('status', 'blocked')->values();
+                } elseif ($statusFilter === 'active') {
+                    $allStudents = $allStudents->where('status', '!=', 'blocked')->values();
+                } else {
+                    $allStudents = $allStudents->where('status', $statusFilter)->values();
+                }
             }
-
-            // Get all students
-            $allStudents = $query->get()
-                ->map(function ($verification) {
-                    return [
-                        'student_verification_id' => $verification->student_verification_id,
-                        'user_id' => $verification->user_id,
-                        'email' => $verification->user->email,
-                        'first_name' => $verification->user->studentInfo?->first_name,
-                        'last_name' => $verification->user->studentInfo?->last_name,
-                        'profile_picture' => $verification->user->studentInfo?->profile_picture,
-                        'verification_document' => $verification->link,
-                        'verification_type' => $verification->verification_use,
-                        'is_verified' => $verification->is_verified,
-                        'wallet_points' => $verification->user->wallet_points,
-                        'is_active' => $verification->user->is_active,
-                        'registered_date' => $verification->user->created_at,
-                        'status' => $verification->status,
-                        'reason' => $verification->reason,
-                    ];
-                });
 
             return response()->json([
-                'message' => 'Students retrieved successfully',
+                'message' => 'Users retrieved successfully',
                 'data' => $allStudents,
                 'count' => $allStudents->count(),
                 'filter' => $statusFilter ?? 'all',
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error getting all students', ['error' => $e->getMessage()]);
+            Log::error('Error getting all users', ['error' => $e->getMessage()]);
             return response()->json([
-                'message' => 'Failed to retrieve students',
+                'message' => 'Failed to retrieve users',
                 'error' => $e->getMessage(),
             ], 500);
         }
@@ -317,7 +321,7 @@ class StudentManagementController extends Controller
     }
 
     /**
-     * Block a student
+     * Block a user
      * PUT /api/admin/students/{user_id}/block
      */
     public function blockStudent(Request $request, $userId)
@@ -326,7 +330,7 @@ class StudentManagementController extends Controller
             // Check if user is admin
             if ($request->user()->role !== 'admin') {
                 return response()->json([
-                    'message' => 'Unauthorized. Only admins can block students.',
+                    'message' => 'Unauthorized. Only admins can block users.',
                 ], 403);
             }
 
@@ -334,36 +338,48 @@ class StudentManagementController extends Controller
                 'reason' => ['required', 'string', 'max:255'],
             ]);
 
-            $verification = StudentVerification::where('user_id', $userId)->first();
+            $user = User::find($userId);
+            if (!$user) {
+                $verification = StudentVerification::find($userId);
+                if ($verification) {
+                    $user = User::find($verification->user_id);
+                }
+            }
 
-            if (!$verification) {
+            if (!$user) {
                 return response()->json([
-                    'message' => 'Student not found',
+                    'message' => 'User not found',
                 ], 404);
             }
 
-            // Mark as blocked
-            $verification->update([
-                'status' => 'blocked',
-                'reason' => $validated['reason'],
-            ]);
-
             // Deactivate user account
-            User::where('user_id', $userId)->update([
+            $user->update([
                 'is_active' => false,
             ]);
 
+            // Update verification status if present
+            $verification = StudentVerification::where('user_id', $user->user_id)->first();
+            if ($verification) {
+                $verification->update([
+                    'status' => 'blocked',
+                    'reason' => $validated['reason'],
+                ]);
+            }
+
+            // Immediately revoke active auth tokens so the user is logged out
+            $user->tokens()->delete();
+
             // Log the action
-            Log::info('Student blocked', [
+            Log::info('User blocked', [
                 'admin_id' => $request->user()->user_id,
-                'student_user_id' => $userId,
+                'user_id' => $user->user_id,
                 'reason' => $validated['reason'],
             ]);
 
             return response()->json([
-                'message' => 'Student blocked successfully',
+                'message' => 'User blocked successfully',
                 'data' => [
-                    'user_id' => $userId,
+                    'user_id' => $user->user_id,
                     'status' => 'blocked',
                     'reason' => $validated['reason'],
                     'is_active' => false,
@@ -371,9 +387,75 @@ class StudentManagementController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Error blocking student', ['error' => $e->getMessage()]);
+            Log::error('Error blocking user', ['error' => $e->getMessage()]);
             return response()->json([
-                'message' => 'Failed to block student',
+                'message' => 'Failed to block user',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Unblock a user
+     * PUT /api/admin/students/{user_id}/unblock
+     */
+    public function unblockStudent(Request $request, $userId)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'message' => 'Unauthorized. Only admins can unblock users.',
+                ], 403);
+            }
+
+            $user = User::find($userId);
+            if (!$user) {
+                $verification = StudentVerification::find($userId);
+                if ($verification) {
+                    $user = User::find($verification->user_id);
+                }
+            }
+
+            if (!$user) {
+                return response()->json([
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            // Reactivate user account
+            $user->update([
+                'is_active' => true,
+            ]);
+
+            // Update verification status if present
+            $verification = StudentVerification::where('user_id', $user->user_id)->first();
+            if ($verification) {
+                $verification->update([
+                    'status' => 'approved',
+                    'reason' => null,
+                ]);
+            }
+
+            // Log the action
+            Log::info('User unblocked', [
+                'admin_id' => $request->user()->user_id,
+                'user_id' => $user->user_id,
+            ]);
+
+            return response()->json([
+                'message' => 'User unblocked successfully',
+                'data' => [
+                    'user_id' => $user->user_id,
+                    'status' => 'active',
+                    'is_active' => true,
+                ]
+            ], 200);
+
+        } catch (\Exception $e) {
+            Log::error('Error unblocking user', ['error' => $e->getMessage()]);
+            return response()->json([
+                'message' => 'Failed to unblock user',
                 'error' => $e->getMessage(),
             ], 500);
         }

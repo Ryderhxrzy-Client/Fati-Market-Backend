@@ -171,6 +171,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::put('/{user_id}/approve', [StudentManagementController::class, 'approveStudent']);
             Route::put('/{user_id}/decline', [StudentManagementController::class, 'declineStudent']);
             Route::put('/{user_id}/block', [StudentManagementController::class, 'blockStudent']);
+            Route::put('/{user_id}/unblock', [StudentManagementController::class, 'unblockStudent']);
             Route::get('/{user_id}', [StudentManagementController::class, 'getStudentDetails']);
         });
 
