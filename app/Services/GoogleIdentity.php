@@ -80,7 +80,7 @@ class GoogleIdentity
         return [
             'subject' => $subject,
             'email' => $email,
-            'first_name' => trim($claims['given_name'] ?? '') ?: 'Student',
+            'first_name' => trim($claims['given_name'] ?? '') ?: 'User',
             'last_name' => trim($claims['family_name'] ?? '') ?: '',
             'picture' => $claims['picture'] ?? null,
         ];
