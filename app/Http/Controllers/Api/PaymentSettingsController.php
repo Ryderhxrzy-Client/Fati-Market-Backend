@@ -21,7 +21,7 @@ class PaymentSettingsController extends Controller
         $data = $request->validate([
             'account_name' => ['required', 'string', 'max:255'],
             'account_number' => ['required', 'string', 'regex:/^(09[0-9]{9}|\\+639[0-9]{9})$/'],
-            'qr_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png', 'max:5120'],
+            'qr_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png', 'max:20480'],
             'remove_qr' => ['sometimes', 'boolean'],
         ]);
 
