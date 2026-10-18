@@ -24,7 +24,7 @@ use RuntimeException;
 class EmailVerification
 {
     /** Long enough to switch apps and read an email, short enough to matter. */
-    public const CODE_MINUTES = 15;
+    public const CODE_MINUTES = 5;
 
     /** Guesses allowed before the code is burned. */
     private const MAX_ATTEMPTS = 6;
