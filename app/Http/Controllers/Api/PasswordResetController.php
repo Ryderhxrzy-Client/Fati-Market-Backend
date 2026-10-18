@@ -24,7 +24,7 @@ use Illuminate\Support\Facades\Mail;
 class PasswordResetController extends Controller
 {
     /** How long a code is good for. Long enough to find the email, no longer. */
-    private const CODE_MINUTES = 15;
+    private const CODE_MINUTES = 5;
 
     /**
      * POST /api/auth/forgot-password
