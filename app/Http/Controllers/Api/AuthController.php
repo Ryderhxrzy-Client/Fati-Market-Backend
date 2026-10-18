@@ -41,7 +41,7 @@ class AuthController extends Controller
                 'regex:/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/',
             ],
             // Optional now, and the only file left anywhere in registration.
-            'profile_picture' => ['nullable', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+            'profile_picture' => ['nullable', 'image', 'max:20480', 'mimes:jpg,jpeg,png'],
         ], [
             'password.regex' => 'Password must contain at least 8 characters, including uppercase letter, lowercase letter, number, and special character (@$!%*?&).',
         ]);
@@ -379,7 +379,7 @@ class AuthController extends Controller
             }
 
             $request->validate([
-                'profile_picture' => ['required', 'image', 'max:5120', 'mimes:jpg,jpeg,png'],
+                'profile_picture' => ['required', 'image', 'max:20480', 'mimes:jpg,jpeg,png'],
             ]);
 
             // Initialize Cloudinary
