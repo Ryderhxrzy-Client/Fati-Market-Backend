@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
 class StoreHours
 {
     private const DEFAULT_OPEN = '08:00';
-    private const DEFAULT_CLOSE = '17:00';
+    private const DEFAULT_CLOSE = '18:00';
     private const DEFAULT_DAYS = [1, 2, 3, 4, 5, 6];
     private const DEFAULT_SLOT_MINUTES = 30;
 
