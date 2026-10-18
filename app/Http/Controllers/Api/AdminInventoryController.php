@@ -205,51 +205,59 @@ class AdminInventoryController extends Controller
         });
     }
 
-    // BOOKING/SCHEDULE DISABLED - no longer required
-    // /**
-     // * Record the agreed meeting / physical turnover schedule.
-     // * POST /api/admin/items/{item_id}/meetup
-     // */
-    // public function setMeetupSchedule(Request $request, $itemId)
-    // {
-        // $request->validate(['meetup_schedule' => ['nullable', 'date']]);
+    /**
+     * Record the agreed meeting / physical turnover schedule.
+     * POST /api/admin/items/{item_id}/meetup
+     */
+    public function setMeetupSchedule(Request $request, $itemId)
+    {
+        $request->validate(['meetup_schedule' => ['nullable', 'date']]);
 
-        // // Clearing the schedule is always allowed. A new time has to fall
-        // // within this month, on a day and at an hour the store is open.
-        // if ($request->filled('meetup_schedule')) {
-            // $at = Carbon::parse($request->input('meetup_schedule'))->setTimezone(config('app.timezone'));
-            // $refusal = StoreHours::refusalFor($at);
+        $scheduleInput = $request->input('meetup_schedule');
+        if ($request->filled('meetup_schedule')) {
+            $raw = trim((string) $scheduleInput);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $raw)) {
+                $raw .= ' ' . \App\Support\StoreHours::openTime() . ':00';
+                $scheduleInput = $raw;
+            }
+            $at = Carbon::parse($raw)->setTimezone(config('app.timezone'));
+            $now = Carbon::now(config('app.timezone'));
 
-            // if ($refusal !== null) {
-                // return response()->json([
-                    // 'message' => $refusal,
-                    // 'errors' => ['meetup_schedule' => [$refusal]],
-                // ], 422);
-            // }
-        // }
+            if ($at->toDateString() < $now->toDateString()) {
+                return response()->json([
+                    'message' => 'That date has already passed. Pick today or a later date.',
+                    'errors' => ['meetup_schedule' => ['That date has already passed.']],
+                ], 422);
+            }
 
-        // return $this->withItem($itemId, function (Item $item) use ($request) {
-            // $item = $this->lifecycle->setMeetupSchedule($item, $request->input('meetup_schedule'));
+            if (!in_array($at->dayOfWeekIso, \App\Support\StoreHours::openDays(), true)) {
+                return response()->json([
+                    'message' => 'The store is closed on ' . $at->format('l') . 's.',
+                    'errors' => ['meetup_schedule' => ['Store is closed on ' . $at->format('l') . 's.']],
+                ], 422);
+            }
+        }
 
-            // // A new time starts the 6h/1h/30m reminders over.
-            // $item->update(['meetup_reminders_sent' => null]);
+        return $this->withItem($itemId, function (Item $item) use ($scheduleInput) {
+            $item = $this->lifecycle->setMeetupSchedule($item, $scheduleInput);
 
-            // if ($item->meetup_schedule !== null) {
-                // $this->notifier->itemUpdate(
-                    // $item,
-                    // "Meet-up set for \"{$item->title}\": "
-                        // . \Illuminate\Support\Carbon::parse($item->meetup_schedule)->format('M j, g:i A')
-                        // . '. Bring the item and show your QR code at the store.',
-                    // 'Meet-up scheduled',
-                // );
-            // }
+            $item->update(['meetup_reminders_sent' => null]);
 
-            // return response()->json([
-                // 'message' => 'Meet-up schedule saved',
-                // 'data' => ItemPresenter::forAdmin($item),
-            // ], 200);
-        // });
-    // }
+            if ($item->meetup_schedule !== null) {
+                $dateFormatted = \Illuminate\Support\Carbon::parse($item->meetup_schedule)->format('M j, Y');
+                $this->notifier->itemUpdate(
+                    $item,
+                    "Turnover schedule set for \"{$item->title}\": {$dateFormatted}. Bring the item to Ofelia's store during store hours.",
+                    'Turnover scheduled',
+                );
+            }
+
+            return response()->json([
+                'message' => 'Turnover schedule saved',
+                'data' => \App\Http\Resources\ItemPresenter::forAdmin($item),
+            ], 200);
+        });
+    }
 
     /**
      * Ofelia/Admin has physically received and verified the item.
