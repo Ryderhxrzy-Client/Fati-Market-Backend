@@ -578,7 +578,8 @@ class CheckoutService
                         });
                 })
                 ->orWhere(function ($sub) use ($now) {
-                    $sub->whereNotNull('reserved_until')
+                    $sub->whereNull('pickup_date')
+                        ->whereNotNull('reserved_until')
                         ->where('reserved_until', '<', $now);
                 });
             })

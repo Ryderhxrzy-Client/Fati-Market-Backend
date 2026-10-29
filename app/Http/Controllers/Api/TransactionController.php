@@ -417,6 +417,10 @@ class TransactionController extends Controller
         }
 
         $updates = ['pickup_date' => $pickupDate];
+        if ($pickupDate) {
+            $atDate = \Illuminate\Support\Carbon::parse($pickupDate)->setTimezone(config('app.timezone'));
+            $updates['reserved_until'] = $atDate->copy()->setTime(18, 0, 0);
+        }
         if ($user->isAdmin() && $transaction->status === Transaction::STATUS_OVERDUE) {
             $updates['status'] = Transaction::STATUS_READY_FOR_PICKUP;
         }
