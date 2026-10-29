@@ -168,6 +168,8 @@ class TransactionController extends Controller
                     default => 'Cash at store',
                 },
                 'payment_reference' => $transaction->payment_reference,
+                'pickup_date' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('Y-m-d') : null,
+                'pickup_date_formatted' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('M j, Y') : null,
                 'payment_status' => $isPartialCashPayment
                     ? Transaction::PAYMENT_PARTIALLY_PAID
                     : $transaction->payment_status,
