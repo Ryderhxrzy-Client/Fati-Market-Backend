@@ -99,8 +99,8 @@ class StudentManagementController extends Controller
                 $verification = $user->verification;
                 $isGoogle = $user->authIdentities->where('provider', 'google')->isNotEmpty();
                 $registrationMethod = $isGoogle ? 'Google' : 'Email & Password';
-                $isBlocked = !$user->is_active || ($verification?->status === 'blocked');
-                $status = $isBlocked ? 'blocked' : ($verification?->status ?? 'active');
+                $isBlocked = ($verification?->status === 'blocked');
+                $status = $isBlocked ? 'blocked' : 'active';
 
                 return [
                     'student_verification_id' => $verification?->student_verification_id ?? $user->user_id,
@@ -357,14 +357,14 @@ class StudentManagementController extends Controller
                 'is_active' => false,
             ]);
 
-            // Update verification status if present
-            $verification = StudentVerification::where('user_id', $user->user_id)->first();
-            if ($verification) {
-                $verification->update([
+            // Update or create verification status
+            StudentVerification::updateOrCreate(
+                ['user_id' => $user->user_id],
+                [
                     'status' => 'blocked',
                     'reason' => $validated['reason'],
-                ]);
-            }
+                ]
+            );
 
             // Immediately revoke active auth tokens so the user is logged out
             $user->tokens()->delete();
@@ -428,14 +428,14 @@ class StudentManagementController extends Controller
                 'is_active' => true,
             ]);
 
-            // Update verification status if present
-            $verification = StudentVerification::where('user_id', $user->user_id)->first();
-            if ($verification) {
-                $verification->update([
+            // Update verification status
+            StudentVerification::updateOrCreate(
+                ['user_id' => $user->user_id],
+                [
                     'status' => 'approved',
                     'reason' => null,
-                ]);
-            }
+                ]
+            );
 
             // Log the action
             Log::info('User unblocked', [
