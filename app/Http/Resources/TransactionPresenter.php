@@ -195,15 +195,24 @@ class TransactionPresenter
             return [];
         }
 
+        $hasDownpayment = (($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
+            && in_array($transaction->downpayment_status, ['verified', 'paid'], true))
+            || ($transaction->payment_method === 'gcash' && in_array($transaction->payment_status, ['verified', 'paid'], true));
+
         if ($transaction->status === Transaction::STATUS_OVERDUE) {
-            $hasDownpayment = (($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
-                && in_array($transaction->downpayment_status, ['verified', 'paid'], true))
-                || ($transaction->payment_method === 'gcash' && in_array($transaction->payment_status, ['verified', 'paid'], true));
             $relistAction = $hasDownpayment ? 'forfeit_and_relist' : 'cancel_and_relist';
             return ['extend_pickup_date', $relistAction, 'complete'];
         }
 
-        $actions = ['cancel'];
+        $isPaid = $transaction->payment_status === Transaction::PAYMENT_VERIFIED || $hasDownpayment;
+
+        $actions = [];
+
+        // Cancel order is ONLY allowed when the order is NOT yet paid!
+        // Once paid, it must proceed to handover/completion or forfeit on overdue.
+        if (!$isPaid && $transaction->payment_status !== Transaction::PAYMENT_PROOF_SUBMITTED) {
+            $actions[] = 'cancel';
+        }
 
         // Verifying says the money arrived, which only a GCash proof shows.
         if ($transaction->payment_status === Transaction::PAYMENT_PROOF_SUBMITTED) {
@@ -228,7 +237,11 @@ class TransactionPresenter
                 Transaction::STATUS_READY_FOR_PICKUP,
             ], true);
 
-        if ($approved && $transaction->pickup_status === Transaction::PICKUP_NOT_READY) {
+        // ONLY offer "mark_ready_for_pickup" if the order is NOT YET ready for pickup!
+        $isAlreadyReady = $transaction->status === Transaction::STATUS_READY_FOR_PICKUP
+            || $transaction->pickup_status === Transaction::PICKUP_READY;
+
+        if ($approved && !$isAlreadyReady) {
             $actions[] = 'mark_ready_for_pickup';
         }
 
