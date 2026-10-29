@@ -33,6 +33,7 @@ class Transaction extends Model
     public const STATUS_COMPLETED = 'completed';
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_REJECTED = 'rejected';
+    public const STATUS_OVERDUE = 'overdue';
 
     public const ALL_STATUSES = [
         self::STATUS_PENDING_PAYMENT,
@@ -40,6 +41,7 @@ class Transaction extends Model
         self::STATUS_PAYMENT_VERIFIED,
         self::STATUS_RESERVED,
         self::STATUS_READY_FOR_PICKUP,
+        self::STATUS_OVERDUE,
         self::STATUS_COMPLETED,
         self::STATUS_CANCELLED,
         self::STATUS_REJECTED,
@@ -52,6 +54,7 @@ class Transaction extends Model
         self::STATUS_PAYMENT_VERIFIED,
         self::STATUS_RESERVED,
         self::STATUS_READY_FOR_PICKUP,
+        self::STATUS_OVERDUE,
     ];
 
     public const PAYMENT_UNPAID = 'unpaid';
@@ -106,6 +109,7 @@ class Transaction extends Model
         'payment_verified_by',
         'handover_photo',
         'pickup_status',
+        'pickup_date',
         'reserved_until',
         'status',
         'completed_at',
@@ -133,6 +137,7 @@ class Transaction extends Model
         'downpayment_amount' => 'decimal:2',
         'remaining_balance' => 'decimal:2',
         'downpayment_verified_at' => 'datetime',
+        'pickup_date' => 'date',
         'transaction_date' => 'datetime',
         'payment_proof_submitted_at' => 'datetime',
         'payment_verified_at' => 'datetime',
