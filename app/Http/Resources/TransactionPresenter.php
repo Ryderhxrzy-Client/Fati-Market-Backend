@@ -161,6 +161,8 @@ class TransactionPresenter
             'is_past_cutoff' => $isPastCutoff,
             'cutoff_time' => \App\Support\StoreHours::cutoffLabel(),
             'pickup_schedule_note' => $pickupScheduleNote,
+            'pickup_date' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('Y-m-d') : null,
+            'pickup_date_formatted' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('M j, Y') : null,
 
             'payment_method' => $transaction->payment_method,
             'payment_status' => $effectivePaymentStatus,
@@ -188,6 +190,10 @@ class TransactionPresenter
     {
         if ($transaction->isTerminal()) {
             return [];
+        }
+
+        if ($transaction->status === Transaction::STATUS_OVERDUE) {
+            return ['extend_pickup_date', 'forfeit_and_relist', 'complete'];
         }
 
         $actions = ['cancel'];
