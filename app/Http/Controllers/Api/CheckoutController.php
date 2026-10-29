@@ -103,6 +103,7 @@ class CheckoutController extends Controller
             'item_id' => ['required', 'integer', 'exists:items,item_id'],
             'points_used' => ['nullable', 'integer', 'min:0'],
             'payment_method' => ['required', 'in:cash,gcash,paymongo'],
+            'pickup_date' => ['nullable', 'date'],
         ]);
 
         $item = Item::where('item_id', $validated['item_id'])->first();
@@ -112,11 +113,45 @@ class CheckoutController extends Controller
         }
 
         try {
+            $now = \Illuminate\Support\Carbon::now(config('app.timezone'));
+            $isPastCutoff = \App\Support\StoreHours::isPastCutoff($now);
+            $openDays = \App\Support\StoreHours::openDays();
+
+            // Earliest bookable day
+            $earliest = $isPastCutoff ? $now->copy()->addDay() : $now->copy();
+            while (!in_array($earliest->dayOfWeekIso, $openDays, true)) {
+                $earliest->addDay();
+            }
+
+            $pickupDate = $validated['pickup_date'] ?? null;
+            if ($pickupDate) {
+                $at = \Illuminate\Support\Carbon::parse($pickupDate)->setTimezone(config('app.timezone'));
+                if (!in_array($at->dayOfWeekIso, $openDays, true)) {
+                    return response()->json([
+                        'message' => 'The store is closed on ' . $at->format('l') . 's.',
+                        'errors' => ['pickup_date' => ['The store is closed on ' . $at->format('l') . 's.']],
+                    ], 422);
+                }
+                if ($at->toDateString() < $earliest->toDateString()) {
+                    $msg = $isPastCutoff
+                        ? 'Store is closed. Choose a pick-up/meet-up date from ' . $earliest->format('l, M j') . '.'
+                        : 'That date has already passed. Pick today or a later open day.';
+                    return response()->json([
+                        'message' => $msg,
+                        'errors' => ['pickup_date' => [$msg]],
+                    ], 422);
+                }
+                $pickupDate = $at->toDateString();
+            } else {
+                $pickupDate = $earliest->toDateString();
+            }
+
             $transaction = $this->checkout->checkout(
                 $item,
                 $request->user(),
                 (int) ($validated['points_used'] ?? 0),
                 $validated['payment_method'],
+                $pickupDate,
             );
 
             $transaction->load(['item.photos', 'buyer', 'seller']);
