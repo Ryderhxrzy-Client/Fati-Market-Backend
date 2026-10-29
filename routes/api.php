@@ -141,6 +141,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/', [TransactionController::class, 'createTransaction']);
         Route::get('/', [TransactionController::class, 'getUserTransactions']);
         Route::get('/{transaction_id}/receipt', [TransactionController::class, 'getReceipt']);
+        Route::put('/{transaction_id}/pickup-schedule', [TransactionController::class, 'setPickupSchedule']);
     });
 
     // Points routes
@@ -225,6 +226,8 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::post('/{transaction_id}/reject-payment', [TransactionController::class, 'rejectPayment']);
             Route::post('/{transaction_id}/ready-for-pickup', [TransactionController::class, 'markReadyForPickup']);
             Route::post('/{transaction_id}/complete', [TransactionController::class, 'complete']);
+            Route::match(['put', 'post'], '/{transaction_id}/pickup-schedule', [TransactionController::class, 'setPickupSchedule']);
+            Route::post('/{transaction_id}/forfeit', [TransactionController::class, 'forfeitOverdue']);
             Route::post('/{transaction_id}/cancel', [TransactionController::class, 'cancel']);
             Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
         });
