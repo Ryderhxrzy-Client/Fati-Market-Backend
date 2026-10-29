@@ -585,6 +585,23 @@ class CheckoutService
             })
             ->get();
 
+        // Orders with a future/valid pickup_date are NOT overdue; restore them to ready_for_pickup.
+        $restoredOrders = Transaction::query()
+            ->buyerOrders()
+            ->where('status', Transaction::STATUS_OVERDUE)
+            ->whereNotNull('pickup_date')
+            ->where(function ($dateQ) use ($todayStr, $isAfterCutoff) {
+                $dateQ->where('pickup_date', '>', $todayStr);
+                if (!$isAfterCutoff) {
+                    $dateQ->orWhere('pickup_date', '=', $todayStr);
+                }
+            })
+            ->get();
+
+        foreach ($restoredOrders as $tx) {
+            $tx->update(['status' => Transaction::STATUS_READY_FOR_PICKUP]);
+        }
+
         $count = 0;
         foreach ($overdueOrders as $transaction) {
             try {
