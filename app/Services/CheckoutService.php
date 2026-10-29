@@ -93,9 +93,9 @@ class CheckoutService
      *
      * @throws RuntimeException when the item cannot be bought by this buyer.
      */
-    public function checkout(Item $item, User $buyer, int $pointsRequested, string $paymentMethod): Transaction
+    public function checkout(Item $item, User $buyer, int $pointsRequested, string $paymentMethod, ?string $pickupDate = null): Transaction
     {
-        $order = DB::transaction(function () use ($item, $buyer, $pointsRequested, $paymentMethod) {
+        $order = DB::transaction(function () use ($item, $buyer, $pointsRequested, $paymentMethod, $pickupDate) {
             // Re-read under a lock: between rendering the catalog and pressing
             // buy, another buyer may have taken this item.
             $locked = Item::where('item_id', $item->item_id)->lockForUpdate()->firstOrFail();
@@ -139,6 +139,7 @@ class CheckoutService
                     : Transaction::PAYMENT_UNPAID,
                 'payment_verified_at' => $isFullPoints ? now() : null,
                 'pickup_status' => Transaction::PICKUP_NOT_READY,
+                'pickup_date' => $pickupDate,
                 // Points cover the whole bill, so there is nothing to pay and
                 // nothing to verify - it goes straight to reserved.
                 'status' => $isFullPoints
@@ -550,39 +551,69 @@ class CheckoutService
      *
      * @return int number of checkouts released
      */
-    public function expireAbandonedCheckouts(): int
+    public function markOverdueCheckouts(): int
     {
-        $expired = Transaction::query()
+        $timezone = config('app.timezone');
+        $now = \Illuminate\Support\Carbon::now($timezone);
+        $todayStr = $now->toDateString();
+        $isAfterCutoff = $now->hour >= 18;
+
+        $overdueOrders = Transaction::query()
             ->buyerOrders()
             ->whereIn('status', [
                 Transaction::STATUS_PENDING_PAYMENT,
                 Transaction::STATUS_PAYMENT_PROOF_SUBMITTED,
+                Transaction::STATUS_PAYMENT_VERIFIED,
+                Transaction::STATUS_RESERVED,
+                Transaction::STATUS_READY_FOR_PICKUP,
             ])
-            ->whereNotNull('reserved_until')
-            ->where('reserved_until', '<', now())
+            ->where(function ($q) use ($now, $todayStr, $isAfterCutoff) {
+                $q->where(function ($sub) use ($todayStr, $isAfterCutoff) {
+                    $sub->whereNotNull('pickup_date')
+                        ->where(function ($dateQ) use ($todayStr, $isAfterCutoff) {
+                            $dateQ->where('pickup_date', '<', $todayStr);
+                            if ($isAfterCutoff) {
+                                $dateQ->orWhere('pickup_date', '=', $todayStr);
+                            }
+                        });
+                })
+                ->orWhere(function ($sub) use ($now) {
+                    $sub->whereNotNull('reserved_until')
+                        ->where('reserved_until', '<', $now);
+                });
+            })
             ->get();
 
-        $released = 0;
-
-        foreach ($expired as $transaction) {
+        $count = 0;
+        foreach ($overdueOrders as $transaction) {
             try {
-                $this->cancel($transaction, null, 'Reservation expired - checkout was not paid in time');
-                $released++;
+                $transaction->update(['status' => Transaction::STATUS_OVERDUE]);
+                $this->announce(
+                    $transaction,
+                    'Reservation overdue',
+                    'The scheduled pickup date has passed. Admin will review this reservation.'
+                );
+                $count++;
             } catch (\Throwable $e) {
-                Log::error('Failed to expire abandoned checkout', [
+                Log::error('Failed to mark overdue checkout', [
                     'transaction_id' => $transaction->transaction_id,
                     'error' => $e->getMessage(),
                 ]);
             }
         }
 
-        return $released;
+        return $count;
+    }
+
+    public function expireAbandonedCheckouts(): int
+    {
+        return $this->markOverdueCheckouts();
     }
 
     // ── Internals ────────────────────────────────────────────────────────
 
     /** Tell the buyer, in the item's own conversation, what just happened. */
-    private function announce(Transaction $transaction, string $headline, ?string $reason = null): void
+    public function announce(Transaction $transaction, string $headline, ?string $reason = null): void
     {
         $item = Item::where('item_id', $transaction->item_id)->first();
 
