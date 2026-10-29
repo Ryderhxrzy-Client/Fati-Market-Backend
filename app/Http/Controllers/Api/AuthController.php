@@ -58,8 +58,7 @@ class AuthController extends Controller
                     'password_set_at' => now(),
                     'wallet_points' => 0,
                     'role' => User::ROLE_STUDENT,
-                    // Both flip together the moment the code comes back.
-                    'is_active' => false,
+                    'is_active' => true,
                     'email_verified_at' => null,
                 ]);
 
@@ -488,6 +487,13 @@ class AuthController extends Controller
                 ], 403);
             }
 
+            // Mark overdue checkouts whenever admin inspects dashboard stats
+            try {
+                app(\App\Services\CheckoutService::class)->markOverdueCheckouts();
+            } catch (\Throwable $t) {
+                \Illuminate\Support\Facades\Log::warning('Dashboard overdue check failed: ' . $t->getMessage());
+            }
+
             // Get statistics
             $stats = [
                 'users' => [
@@ -503,6 +509,7 @@ class AuthController extends Controller
                     'acquired_items' => \App\Models\Item::where('status', 'acquired')->count(),
                     'reserved_items' => \App\Models\Item::where('status', 'reserved')->count(),
                     'sold_items' => \App\Models\Item::where('status', 'sold')->count(),
+                    'overdue_items' => \App\Models\Transaction::buyerOrders()->where('status', \App\Models\Transaction::STATUS_OVERDUE)->count(),
                 ],
                 'recent_activities' => [
                     'recent_registrations' => User::where('role', 'student')
