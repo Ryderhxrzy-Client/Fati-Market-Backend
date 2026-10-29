@@ -237,6 +237,9 @@ class TransactionController extends Controller
     public function getAllTransactions(Request $request)
     {
         try {
+            // Check and mark overdue reservations
+            $this->checkout->markOverdueCheckouts();
+
             $query = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])->buyerOrders();
 
             if ($request->filled('status')) {
@@ -365,6 +368,112 @@ class TransactionController extends Controller
                 'data' => TransactionPresenter::forAdmin($transaction->load(['item.photos', 'buyer.studentInfo', 'seller'])),
             ], 200);
         });
+    }
+
+    /**
+     * Set or update pickup schedule date for an order.
+     * PUT /api/transactions/{transaction_id}/pickup-schedule
+     * POST /api/admin/transactions/{transaction_id}/pickup-schedule
+     */
+    public function setPickupSchedule(Request $request, $transactionId)
+    {
+        $request->validate([
+            'pickup_date' => ['nullable', 'date'],
+        ]);
+
+        $user = $request->user();
+        $transaction = Transaction::where('transaction_id', $transactionId)->firstOrFail();
+
+        // Admin can always set/update.
+        // Buyer can set/update only within store operating hours.
+        if (!$user->isAdmin()) {
+            if ($transaction->buyer_id !== $user->user_id) {
+                return response()->json(['message' => 'Unauthorized.'], 403);
+            }
+            if (\App\Support\StoreHours::isPastCutoff()) {
+                return response()->json([
+                    'message' => 'Store is currently closed or past operating hours. Admin will set your pickup schedule.',
+                ], 422);
+            }
+        }
+
+        $pickupDate = $request->input('pickup_date');
+        if ($pickupDate) {
+            $at = \Illuminate\Support\Carbon::parse($pickupDate)->setTimezone(config('app.timezone'));
+            $now = \Illuminate\Support\Carbon::now(config('app.timezone'));
+            if ($at->toDateString() < $now->toDateString()) {
+                return response()->json([
+                    'message' => 'That date has already passed. Pick today or a later date.',
+                    'errors' => ['pickup_date' => ['That date has already passed.']],
+                ], 422);
+            }
+            if (!in_array($at->dayOfWeekIso, \App\Support\StoreHours::openDays(), true)) {
+                return response()->json([
+                    'message' => 'The store is closed on ' . $at->format('l') . 's.',
+                    'errors' => ['pickup_date' => ['The store is closed on ' . $at->format('l') . 's.']],
+                ], 422);
+            }
+            $pickupDate = $at->toDateString();
+        }
+
+        $updates = ['pickup_date' => $pickupDate];
+        if ($user->isAdmin() && $transaction->status === Transaction::STATUS_OVERDUE) {
+            $updates['status'] = Transaction::STATUS_READY_FOR_PICKUP;
+        }
+
+        $transaction->update($updates);
+
+        if ($user->isAdmin() && $pickupDate) {
+            $this->checkout->announce(
+                $transaction,
+                'Pickup date updated',
+                'Admin set the pickup schedule to ' . \Illuminate\Support\Carbon::parse($pickupDate)->format('M j, Y') . '.'
+            );
+        }
+
+        $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
+
+        return response()->json([
+            'message' => 'Pickup schedule saved',
+            'data' => $user->isAdmin()
+                ? TransactionPresenter::forAdmin($loaded)
+                : TransactionPresenter::forBuyer($loaded),
+        ], 200);
+    }
+
+    /**
+     * Admin forfeits downpayment and returns item to public marketplace for an overdue order.
+     * POST /api/admin/transactions/{transaction_id}/forfeit
+     */
+    public function forfeitOverdue(Request $request, $transactionId)
+    {
+        $transaction = Transaction::where('transaction_id', $transactionId)->firstOrFail();
+        $item = Item::where('item_id', $transaction->item_id)->firstOrFail();
+
+        $transaction->update([
+            'status' => Transaction::STATUS_CANCELLED,
+            'cancel_reason' => 'Overdue reservation: downpayment forfeited by admin and item returned to marketplace',
+            'cancelled_at' => now(),
+            'cancelled_by' => $request->user()->user_id,
+            'downpayment_status' => 'forfeited',
+        ]);
+
+        $item->update([
+            'status' => 'approved',
+        ]);
+
+        $this->checkout->announce(
+            $transaction,
+            'Reservation forfeited',
+            'The pickup schedule was overdue. Downpayment was forfeited and the item has been returned to the marketplace.'
+        );
+
+        $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
+
+        return response()->json([
+            'message' => 'Downpayment forfeited and item returned to marketplace successfully.',
+            'data' => TransactionPresenter::forAdmin($loaded),
+        ], 200);
     }
 
     /**
