@@ -229,6 +229,7 @@ Route::middleware('auth:sanctum')->group(function () {
             Route::match(['put', 'post'], '/{transaction_id}/pickup-schedule', [TransactionController::class, 'setPickupSchedule']);
             Route::post('/{transaction_id}/forfeit', [TransactionController::class, 'forfeitOverdue']);
             Route::post('/{transaction_id}/cancel', [TransactionController::class, 'cancel']);
+            Route::post('/{transaction_id}/refund', [TransactionController::class, 'processRefund']);
             Route::put('/{transaction_id}', [TransactionController::class, 'updateTransactionStatus']);
         });
 
