@@ -638,6 +638,88 @@ class TransactionController extends Controller
     }
 
     /**
+     * Process or update refund for a cancelled transaction.
+     * POST /api/admin/transactions/{transaction_id}/refund
+     */
+    public function processRefund(Request $request, $transactionId)
+    {
+        $validated = $request->validate([
+            'reference_number' => ['nullable', 'string', 'max:255'],
+            'action' => ['nullable', 'string', 'in:paymongo,manual'],
+        ]);
+
+        return $this->withTransaction($transactionId, function (Transaction $transaction) use ($request, $validated) {
+            if ($transaction->status !== Transaction::STATUS_CANCELLED) {
+                return response()->json(['message' => 'Only cancelled transactions can be refunded.'], 422);
+            }
+
+            if (!$transaction->hasPaid()) {
+                return response()->json(['message' => 'This transaction was unpaid and does not require a refund.'], 422);
+            }
+
+            $refundAmount = $transaction->refund_amount ?? (
+                $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0
+                    ? $transaction->downpayment_amount
+                    : $transaction->amount_due
+            );
+
+            $action = $validated['action'] ?? ($transaction->payment_method === Transaction::METHOD_PAYMONGO ? 'paymongo' : 'manual');
+
+            if ($action === 'paymongo') {
+                if (empty($transaction->paymongo_payment_id)) {
+                    return response()->json(['message' => 'No PayMongo Payment ID found on this transaction.'], 422);
+                }
+
+                $paymongoService = app(\App\Services\PayMongoService::class);
+                $centavos = (int) round(((float) $refundAmount) * 100);
+                $refundRes = $paymongoService->createRefund(
+                    $transaction->paymongo_payment_id,
+                    $centavos,
+                    'others',
+                    "Admin manual refund for Order #{$transaction->transaction_id}"
+                );
+
+                $transaction->update([
+                    'refund_status' => Transaction::REFUND_PROCESSING,
+                    'refund_amount' => $refundAmount,
+                    'refund_reference' => $refundRes['id'] ?? $transaction->refund_reference,
+                ]);
+
+                $this->checkout->announce(
+                    $transaction,
+                    'Refund initiated via PayMongo',
+                    "A refund of ₱" . number_format((float) $refundAmount, 2) . " has been submitted to PayMongo and is currently processing."
+                );
+
+                return response()->json([
+                    'message' => 'PayMongo refund submitted successfully.',
+                    'data' => TransactionPresenter::forAdmin($transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller'])),
+                ], 200);
+            }
+
+            // Manual refund (GCash / Cash)
+            $reference = $validated['reference_number'] ?? ('MANUAL-' . strtoupper(uniqid()));
+            $transaction->update([
+                'refund_status' => Transaction::REFUND_COMPLETED,
+                'refund_amount' => $refundAmount,
+                'refund_reference' => $reference,
+                'refunded_at' => now(),
+            ]);
+
+            $this->checkout->announce(
+                $transaction,
+                'Refund completed',
+                "Refund completed by admin. Reference number: {$reference}. Amount refunded: ₱" . number_format((float) $refundAmount, 2) . "."
+            );
+
+            return response()->json([
+                'message' => 'Refund marked as completed successfully.',
+                'data' => TransactionPresenter::forAdmin($transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller'])),
+            ], 200);
+        });
+    }
+
+    /**
      * Legacy admin status update.
      * PUT /api/admin/transactions/{transaction_id}
      *
