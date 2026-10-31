@@ -549,15 +549,69 @@ class CheckoutService
             $this->restoreRedeemedPoints($locked, $reason);
             $this->releaseItem($locked);
 
-            $locked->update([
+            $hasPaid = $locked->hasPaid();
+            $refundableAmount = 0.0;
+            $refundStatus = null;
+            $refundRef = null;
+
+            if ($hasPaid) {
+                if ($locked->downpayment_amount !== null && (float) $locked->downpayment_amount > 0 && (float) $locked->remaining_balance > 0) {
+                    $refundableAmount = (float) $locked->downpayment_amount;
+                } else {
+                    $refundableAmount = (float) $locked->amount_due;
+                }
+
+                $refundStatus = Transaction::REFUND_PROCESSING;
+
+                // If paid via PayMongo with payment ID, trigger PayMongo refund immediately
+                if ($locked->payment_method === Transaction::METHOD_PAYMONGO && !empty($locked->paymongo_payment_id)) {
+                    try {
+                        $paymongoService = app(\App\Services\PayMongoService::class);
+                        $centavos = (int) round($refundableAmount * 100);
+                        $refundRes = $paymongoService->createRefund(
+                            $locked->paymongo_payment_id,
+                            $centavos,
+                            'others',
+                            "Order #{$locked->transaction_id} cancellation: {$reason}"
+                        );
+                        $refundRef = $refundRes['id'] ?? null;
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::error('Auto PayMongo refund failed on cancel: ' . $e->getMessage());
+                    }
+                }
+            }
+
+            $updateData = [
                 'status' => Transaction::STATUS_CANCELLED,
                 'cancelled_at' => now(),
                 'cancelled_by' => $actor?->user_id,
                 'cancel_reason' => $reason,
-            ]);
+            ];
+
+            if ($hasPaid) {
+                $updateData['refund_status'] = $refundStatus;
+                $updateData['refund_amount'] = $refundableAmount;
+                $updateData['refund_reason'] = $reason;
+                if ($refundRef) {
+                    $updateData['refund_reference'] = $refundRef;
+                }
+            }
+
+            $locked->update($updateData);
 
             $fresh = $locked->fresh();
-            $this->announce($fresh, '⚠️ This order was cancelled.', $reason);
+
+            if ($hasPaid) {
+                $formattedAmount = number_format($refundableAmount, 2);
+                $methodLabel = strtoupper($fresh->payment_method ?? 'ONLINE PAYMENT');
+                $this->announce(
+                    $fresh,
+                    '⚠️ Order cancelled by admin.',
+                    "Reason: {$reason}\n\nYour refund of ₱{$formattedAmount} is currently being processed via {$methodLabel} (typically takes 3–5 business days). If you have not received it after this period, please message the store admin in this chat."
+                );
+            } else {
+                $this->announce($fresh, '⚠️ This order was cancelled.', $reason);
+            }
 
             return $fresh;
         });
