@@ -184,12 +184,28 @@ class TransactionPresenter
             'qr_code' => OrderQr::codeFor($transaction),
             // Proof the item was physically handed over, set on completion.
             'handover_photo' => $transaction->handover_photo,
+
+            // Refund attributes
+            'refund_status' => $transaction->refund_status,
+            'refund_amount' => $transaction->refund_amount ? (string) $transaction->refund_amount : null,
+            'refund_amount_formatted' => $transaction->refund_amount ? '₱' . number_format((float) $transaction->refund_amount, 2) : null,
+            'refund_reason' => $transaction->refund_reason,
+            'refund_reference' => $transaction->refund_reference,
+            'refunded_at' => $transaction->refunded_at ? \Illuminate\Support\Carbon::parse($transaction->refunded_at)->format('M j, Y g:i A') : null,
+            'can_refund' => $transaction->status === Transaction::STATUS_CANCELLED && $transaction->hasPaid() && $transaction->refund_status !== Transaction::REFUND_COMPLETED,
         ];
     }
 
     /** @return list<string> */
     private static function availableActions(Transaction $transaction): array
     {
+        if ($transaction->status === Transaction::STATUS_CANCELLED) {
+            if ($transaction->hasPaid() && $transaction->refund_status !== Transaction::REFUND_COMPLETED) {
+                return ['process_refund'];
+            }
+            return [];
+        }
+
         if ($transaction->isTerminal()) {
             return [];
         }
@@ -205,9 +221,8 @@ class TransactionPresenter
 
         $actions = [];
 
-        // Cancel order is ONLY allowed when the order is NOT yet paid!
-        // Once paid, it must proceed to handover/completion or forfeit on overdue.
-        if (!$isPaid && $transaction->payment_status !== Transaction::PAYMENT_PROOF_SUBMITTED) {
+        // Cancel order is allowed for open orders awaiting fulfillment
+        if ($transaction->payment_status !== Transaction::PAYMENT_PROOF_SUBMITTED) {
             $actions[] = 'cancel';
         }
 
