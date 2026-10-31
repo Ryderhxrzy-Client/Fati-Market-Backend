@@ -321,10 +321,10 @@ class CheckoutController extends Controller
             return response()->json(['message' => 'This is not your order.'], 403);
         }
 
-        // Once payment is verified only Admin may unwind the order.
-        if ($transaction->payment_status === Transaction::PAYMENT_VERIFIED) {
+        // Once payment has been made or verified, only Admin may cancel or refund the order.
+        if ($transaction->hasPaid() || $transaction->payment_status === Transaction::PAYMENT_VERIFIED || $transaction->payment_status === Transaction::PAYMENT_PAID || $transaction->payment_status === Transaction::PAYMENT_PARTIALLY_PAID) {
             return response()->json([
-                'message' => 'Your payment has already been verified. Please contact the admin to cancel.',
+                'message' => 'Your payment has already been received. Please contact the store admin if you need assistance.',
             ], 409);
         }
 
