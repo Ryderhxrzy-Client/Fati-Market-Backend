@@ -48,6 +48,10 @@ class PayMongoWebhookController extends Controller
         $eventId = $payload['data']['id'] ?? null;
         $eventType = $payload['data']['attributes']['type'] ?? null;
 
+        if (in_array($eventType, ['payment.refunded', 'payment.refund.updated'], true)) {
+            return $this->handleRefundEvent($payload, $eventId);
+        }
+
         if ($eventType !== 'checkout_session.payment.paid') {
             return response()->json(['message' => "Event [{$eventType}] ignored."], 200);
         }
@@ -143,6 +147,11 @@ class PayMongoWebhookController extends Controller
                     $updates['downpayment_verified_at'] = now();
                 }
 
+                $sessionPayments = $sessionAttributes['payments'] ?? [];
+                if (!empty($sessionPayments) && isset($sessionPayments[0]['id'])) {
+                    $updates['paymongo_payment_id'] = $sessionPayments[0]['id'];
+                }
+
                 $locked->update($updates);
 
                 $fresh = $locked->fresh();
@@ -173,6 +182,76 @@ class PayMongoWebhookController extends Controller
 
             return response()->json(['error' => 'Failed to process webhook payment event.'], 500);
         }
+    }
+
+    /**
+     * Handle PayMongo refund events: payment.refunded, payment.refund.updated.
+     */
+    private function handleRefundEvent(array $payload, ?string $eventId)
+    {
+        $refundData = $payload['data']['attributes']['data'] ?? [];
+        $resourceId = $refundData['id'] ?? null;
+        $attributes = $refundData['attributes'] ?? [];
+
+        $paymentId = $attributes['payment_id'] ?? (str_starts_with((string) $resourceId, 'pay_') ? $resourceId : null);
+        $refundId = str_starts_with((string) $resourceId, 'ref_') ? $resourceId : ($attributes['refunds'][0]['id'] ?? null);
+        $status = strtolower($attributes['status'] ?? '');
+        $amountInCentavos = $attributes['amount'] ?? null;
+
+        $transaction = null;
+        if (!empty($paymentId)) {
+            $transaction = Transaction::where('paymongo_payment_id', $paymentId)->first();
+        }
+        if (!$transaction && !empty($refundId)) {
+            $transaction = Transaction::where('refund_reference', $refundId)->first();
+        }
+
+        if (!$transaction) {
+            Log::warning('PayMongo Webhook: Transaction not found for refund event.', [
+                'event_id' => $eventId,
+                'payment_id' => $paymentId,
+                'refund_id' => $refundId,
+            ]);
+            return response()->json(['message' => 'Transaction not found for refund.'], 200);
+        }
+
+        $refundAmountPesos = $amountInCentavos ? ($amountInCentavos / 100) : ($transaction->refund_amount ?? $transaction->amount_due);
+
+        if (in_array($status, ['paid', 'succeeded', 'completed'], true) || $payload['data']['attributes']['type'] === 'payment.refunded') {
+            $transaction->update([
+                'refund_status' => Transaction::REFUND_COMPLETED,
+                'refunded_at' => now(),
+                'refund_reference' => $refundId ?? $transaction->refund_reference,
+            ]);
+
+            $item = Item::where('item_id', $transaction->item_id)->first();
+            $buyer = User::where('user_id', $transaction->buyer_id)->first();
+            if ($item !== null && $buyer !== null) {
+                $formatted = number_format((float) $refundAmountPesos, 2);
+                $this->notifier->outcome(
+                    $transaction,
+                    $item,
+                    "Refund completed: ₱{$formatted} has been successfully refunded to your account via PayMongo."
+                );
+            }
+
+            return response()->json(['message' => 'Refund event processed as completed.'], 200);
+        }
+
+        if (in_array($status, ['failed', 'rejected'], true)) {
+            $transaction->update([
+                'refund_status' => Transaction::REFUND_FAILED,
+            ]);
+
+            return response()->json(['message' => 'Refund event recorded as failed.'], 200);
+        }
+
+        $transaction->update([
+            'refund_status' => Transaction::REFUND_PROCESSING,
+            'refund_reference' => $refundId ?? $transaction->refund_reference,
+        ]);
+
+        return response()->json(['message' => 'Refund event updated.'], 200);
     }
 
     /**
