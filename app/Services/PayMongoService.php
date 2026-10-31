@@ -196,7 +196,7 @@ class PayMongoService
      */
     public function createWebhook(
         string $webhookUrl,
-        array $events = ['checkout_session.payment.paid']
+        array $events = ['checkout_session.payment.paid', 'payment.refunded', 'payment.refund.updated']
     ): array {
         $secretKey = $this->getSecretKey();
 
@@ -256,6 +256,51 @@ class PayMongoService
                 'error_detail' => $response->json('errors.0.detail') ?? $response->body(),
             ]);
             $errorMsg = $response->json('errors.0.detail') ?? 'Failed to retrieve webhook.';
+            throw new RuntimeException("PayMongo API error: {$errorMsg}");
+        }
+
+        return $response->json('data') ?? [];
+    }
+
+    /**
+     * Create a refund for a payment via PayMongo Refunds API.
+     *
+     * @param string $paymentId e.g. pay_xxxx
+     * @param int $amountInCentavos
+     * @param string $reason duplicate | fraudulent | requested_by_customer | others
+     * @param string|null $notes
+     * @return array
+     */
+    public function createRefund(
+        string $paymentId,
+        int $amountInCentavos,
+        string $reason = 'others',
+        ?string $notes = null
+    ): array {
+        $secretKey = $this->getSecretKey();
+
+        $payload = [
+            'data' => [
+                'attributes' => [
+                    'amount' => $amountInCentavos,
+                    'payment_id' => $paymentId,
+                    'reason' => $reason,
+                    'notes' => $notes ?? 'Order refund',
+                ],
+            ],
+        ];
+
+        $response = Http::withBasicAuth($secretKey, '')
+            ->acceptJson()
+            ->post(self::BASE_URL . '/refunds', $payload);
+
+        if ($response->failed()) {
+            Log::error('PayMongo create refund failed', [
+                'payment_id' => $paymentId,
+                'status' => $response->status(),
+                'error_detail' => $response->json('errors.0.detail') ?? $response->body(),
+            ]);
+            $errorMsg = $response->json('errors.0.detail') ?? 'Failed to process refund with PayMongo.';
             throw new RuntimeException("PayMongo API error: {$errorMsg}");
         }
 
