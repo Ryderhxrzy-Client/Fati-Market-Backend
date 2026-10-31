@@ -63,6 +63,11 @@ class Transaction extends Model
     public const PAYMENT_VERIFIED = 'verified';
     public const PAYMENT_REJECTED = 'rejected';
 
+    public const REFUND_PENDING = 'pending';
+    public const REFUND_PROCESSING = 'processing';
+    public const REFUND_COMPLETED = 'completed';
+    public const REFUND_FAILED = 'failed';
+
     public const PICKUP_NOT_READY = 'not_ready';
     public const PICKUP_READY = 'ready';
     public const PICKUP_PICKED_UP = 'picked_up';
@@ -103,6 +108,12 @@ class Transaction extends Model
         'payment_reference',
         'paymongo_checkout_session_id',
         'paymongo_event_id',
+        'paymongo_payment_id',
+        'refund_status',
+        'refund_amount',
+        'refund_reason',
+        'refund_reference',
+        'refunded_at',
         'payment_proof_submitted_at',
         'payment_status',
         'payment_verified_at',
@@ -136,6 +147,7 @@ class Transaction extends Model
         'amount_due' => 'decimal:2',
         'downpayment_amount' => 'decimal:2',
         'remaining_balance' => 'decimal:2',
+        'refund_amount' => 'decimal:2',
         'downpayment_verified_at' => 'datetime',
         'pickup_date' => 'date',
         'transaction_date' => 'datetime',
@@ -144,6 +156,7 @@ class Transaction extends Model
         'reserved_until' => 'datetime',
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',
+        'refunded_at' => 'datetime',
     ];
 
     // ── Money accessors ──────────────────────────────────────────────────
@@ -206,6 +219,26 @@ class Transaction extends Model
                 && in_array($this->downpayment_status, ['verified', 'paid'], true))
             || (in_array($this->payment_method, [self::METHOD_GCASH, self::METHOD_PAYMONGO], true)
                 && in_array($this->payment_status, [self::PAYMENT_VERIFIED, 'paid', 'verified'], true));
+    }
+
+    public function hasRefund(): bool
+    {
+        return !empty($this->refund_status) && $this->refund_status !== 'none';
+    }
+
+    public function isRefundProcessing(): bool
+    {
+        return in_array($this->refund_status, [self::REFUND_PENDING, self::REFUND_PROCESSING], true);
+    }
+
+    public function isRefundCompleted(): bool
+    {
+        return $this->refund_status === self::REFUND_COMPLETED;
+    }
+
+    public function isRefundFailed(): bool
+    {
+        return $this->refund_status === self::REFUND_FAILED;
     }
 
     /**
