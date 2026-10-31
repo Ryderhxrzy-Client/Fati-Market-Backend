@@ -196,6 +196,19 @@ class Transaction extends Model
     }
 
     /**
+     * Whether the buyer has paid any funds (either downpayment or full payment).
+     */
+    public function hasPaid(): bool
+    {
+        return in_array($this->payment_status, [self::PAYMENT_VERIFIED, self::PAYMENT_PARTIALLY_PAID, 'paid', 'verified'], true)
+            || in_array($this->downpayment_status, ['verified', 'paid'], true)
+            || (($this->downpayment_amount !== null && (float) $this->downpayment_amount > 0)
+                && in_array($this->downpayment_status, ['verified', 'paid'], true))
+            || (in_array($this->payment_method, [self::METHOD_GCASH, self::METHOD_PAYMONGO], true)
+                && in_array($this->payment_status, [self::PAYMENT_VERIFIED, 'paid', 'verified'], true));
+    }
+
+    /**
      * Whether the buyer may still switch between cash and GCash.
      *
      * Only before anything has happened to the payment. Once a receipt is up,

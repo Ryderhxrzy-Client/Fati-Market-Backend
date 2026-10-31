@@ -233,6 +233,11 @@ class CheckoutService
                 $updates['remaining_balance'] = $amountDue->minus($downpayment)->toDecimalString();
                 $updates['downpayment_status'] = $downpayment->isZero() ? 'verified' : 'unpaid';
                 $updates['downpayment_verified_at'] = null;
+            } else {
+                $updates['downpayment_amount'] = '0.00';
+                $updates['remaining_balance'] = '0.00';
+                $updates['downpayment_status'] = 'verified';
+                $updates['downpayment_verified_at'] = null;
             }
 
             $locked->update($updates);

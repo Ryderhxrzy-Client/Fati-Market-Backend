@@ -163,9 +163,8 @@ class TransactionPresenter
             'pickup_schedule_note' => $pickupScheduleNote,
             'pickup_date' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('Y-m-d') : null,
             'pickup_date_formatted' => $transaction->pickup_date ? \Illuminate\Support\Carbon::parse($transaction->pickup_date)->format('M j, Y') : null,
-            'has_paid_downpayment' => (($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
-                && in_array($transaction->downpayment_status, ['verified', 'paid'], true))
-                || ($transaction->payment_method === 'gcash' && in_array($transaction->payment_status, ['verified', 'paid'], true)),
+            'has_paid_downpayment' => $transaction->hasPaid(),
+            'has_paid' => $transaction->hasPaid(),
 
             'payment_method' => $transaction->payment_method,
             'payment_status' => $effectivePaymentStatus,
@@ -195,16 +194,14 @@ class TransactionPresenter
             return [];
         }
 
-        $hasDownpayment = (($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
-            && in_array($transaction->downpayment_status, ['verified', 'paid'], true))
-            || ($transaction->payment_method === 'gcash' && in_array($transaction->payment_status, ['verified', 'paid'], true));
+        $hasPaid = $transaction->hasPaid();
 
         if ($transaction->status === Transaction::STATUS_OVERDUE) {
-            $relistAction = $hasDownpayment ? 'forfeit_and_relist' : 'cancel_and_relist';
+            $relistAction = $hasPaid ? 'forfeit_and_relist' : 'cancel_and_relist';
             return ['extend_pickup_date', $relistAction, 'complete'];
         }
 
-        $isPaid = $transaction->payment_status === Transaction::PAYMENT_VERIFIED || $hasDownpayment;
+        $isPaid = $transaction->payment_status === Transaction::PAYMENT_VERIFIED || $hasPaid;
 
         $actions = [];
 

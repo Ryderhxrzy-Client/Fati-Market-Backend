@@ -458,12 +458,11 @@ class TransactionController extends Controller
         $transaction = Transaction::where('transaction_id', $transactionId)->firstOrFail();
         $item = Item::where('item_id', $transaction->item_id)->firstOrFail();
 
-        $hasDownpayment = (($transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0)
-            && in_array($transaction->downpayment_status, ['verified', 'paid'], true))
-            || ($transaction->payment_method === 'gcash' && in_array($transaction->payment_status, ['verified', 'paid'], true));
+        $hasPaid = $transaction->hasPaid();
+        $isDownpaymentOnly = $hasPaid && $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0;
 
         // If unpaid and points were used, restore points
-        if (!$hasDownpayment && $transaction->points_used > 0) {
+        if (!$hasPaid && $transaction->points_used > 0) {
             $buyer = \App\Models\User::where('user_id', $transaction->buyer_id)->first();
             if ($buyer) {
                 app(\App\Services\PointsLedger::class)->refund(
@@ -477,12 +476,14 @@ class TransactionController extends Controller
 
         $transaction->update([
             'status' => Transaction::STATUS_CANCELLED,
-            'cancel_reason' => $hasDownpayment
-                ? 'Overdue reservation: downpayment forfeited by admin and item returned to marketplace'
+            'cancel_reason' => $hasPaid
+                ? ($isDownpaymentOnly
+                    ? 'Overdue reservation: downpayment forfeited by admin and item returned to marketplace'
+                    : 'Overdue reservation: payment forfeited by admin and item returned to marketplace')
                 : 'Overdue reservation: cancelled by admin due to non-payment and item returned to marketplace',
             'cancelled_at' => now(),
             'cancelled_by' => $request->user()->user_id,
-            'downpayment_status' => $hasDownpayment ? 'forfeited' : 'cancelled',
+            'downpayment_status' => $hasPaid ? 'forfeited' : 'cancelled',
         ]);
 
         $item->update([
@@ -495,17 +496,21 @@ class TransactionController extends Controller
 
         $this->checkout->announce(
             $transaction,
-            $hasDownpayment ? 'Reservation forfeited' : 'Reservation cancelled',
-            $hasDownpayment
-                ? 'The pickup schedule was overdue. Downpayment was forfeited and the item has been returned to the marketplace.'
+            $hasPaid ? 'Reservation forfeited' : 'Reservation cancelled',
+            $hasPaid
+                ? ($isDownpaymentOnly
+                    ? 'The pickup schedule was overdue. Downpayment was forfeited and the item has been returned to the marketplace.'
+                    : 'The pickup schedule was overdue. Payment was forfeited and the item has been returned to the marketplace.')
                 : 'The pickup schedule was overdue without payment. The item has been returned to the marketplace.'
         );
 
         $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
 
         return response()->json([
-            'message' => $hasDownpayment
-                ? 'Downpayment forfeited and item returned to marketplace successfully.'
+            'message' => $hasPaid
+                ? ($isDownpaymentOnly
+                    ? 'Downpayment forfeited and item returned to marketplace successfully.'
+                    : 'Payment forfeited and item returned to marketplace successfully.')
                 : 'Order cancelled and item returned to marketplace successfully.',
             'data' => TransactionPresenter::forAdmin($loaded),
         ], 200);
