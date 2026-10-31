@@ -245,7 +245,17 @@ class TransactionController extends Controller
             $query = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])->buyerOrders();
 
             if ($request->filled('status')) {
-                $query->where('status', $request->query('status'));
+                if ($request->query('status') === 'refunds') {
+                    $query->where(function ($q) {
+                        $q->whereNotNull('refund_status')
+                          ->orWhere(function ($sub) {
+                              $sub->where('status', Transaction::STATUS_CANCELLED)
+                                  ->whereIn('payment_status', [Transaction::PAYMENT_PAID, Transaction::PAYMENT_VERIFIED, Transaction::PAYMENT_PARTIALLY_PAID]);
+                          });
+                    });
+                } else {
+                    $query->where('status', $request->query('status'));
+                }
             }
 
             if ($request->filled('payment_status')) {
@@ -460,6 +470,72 @@ class TransactionController extends Controller
 
         $hasPaid = $transaction->hasPaid();
         $isDownpaymentOnly = $hasPaid && $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0;
+        $shouldRefund = $request->boolean('refund', false);
+
+        if ($shouldRefund && $hasPaid) {
+            // If points were used, restore points
+            if ($transaction->points_used > 0) {
+                $buyer = \App\Models\User::where('user_id', $transaction->buyer_id)->first();
+                if ($buyer) {
+                    app(\App\Services\PointsLedger::class)->refund(
+                        $buyer,
+                        $transaction->points_used,
+                        $transaction,
+                        'Refund: Overdue order cancelled and refunded'
+                    );
+                }
+            }
+
+            $refundable = $transaction->getRefundableAmount();
+            $transaction->refund_amount = $refundable;
+            $transaction->refund_status = Transaction::REFUND_PROCESSING;
+            $transaction->refund_reason = 'Overdue reservation: cancelled and refunded by admin';
+
+            if ($transaction->isPaymongo() && !empty($transaction->paymongo_payment_id)) {
+                $amountInCentavos = (int) round($refundable * 100);
+                $refundResult = $this->paymongo->createRefund(
+                    $transaction->paymongo_payment_id,
+                    $amountInCentavos,
+                    'requested_by_customer',
+                    'Overdue order #' . $transaction->transaction_id . ' cancelled and refunded'
+                );
+
+                if ($refundResult['success']) {
+                    $transaction->refund_reference = $refundResult['refund_id'] ?? null;
+                }
+            }
+
+            $transaction->update([
+                'status' => Transaction::STATUS_CANCELLED,
+                'cancel_reason' => 'Overdue reservation: cancelled and refunded by admin; item returned to marketplace',
+                'cancelled_at' => now(),
+                'cancelled_by' => $request->user()->user_id,
+                'downpayment_status' => 'refunded',
+            ]);
+
+            $item->update([
+                'status' => \App\Models\Item::STATUS_PUBLIC,
+            ]);
+
+            \App\Models\Reservation::where('item_id', $transaction->item_id)
+                ->whereIn('status', ['active', 'overdue'])
+                ->update(['status' => 'cancelled']);
+
+            $refundText = $transaction->refund_amount ? (' An automated refund of ₱' . number_format($transaction->refund_amount, 2) . ' is being processed (typically 3–5 business days).') : '';
+
+            $this->checkout->announce(
+                $transaction,
+                'Reservation cancelled & refunded',
+                'The pickup schedule was overdue. The order was cancelled, payment is being refunded to the buyer, and the item has been returned to the marketplace.' . $refundText
+            );
+
+            $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
+
+            return response()->json([
+                'message' => 'Overdue order cancelled, refund initiated, and item returned to marketplace successfully.',
+                'data' => TransactionPresenter::forAdmin($loaded),
+            ], 200);
+        }
 
         // If unpaid and points were used, restore points
         if (!$hasPaid && $transaction->points_used > 0) {
