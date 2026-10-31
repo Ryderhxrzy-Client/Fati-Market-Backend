@@ -136,6 +136,7 @@ class MessagesController extends Controller
     public function getMessagesByItem(Request $request, $itemId)
     {
         try {
+            app(\App\Services\CheckoutService::class)->markOverdueCheckouts();
             $userId = $request->user()->user_id;
             $otherUserId = $request->query('other_user_id');
 

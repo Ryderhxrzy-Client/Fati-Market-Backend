@@ -11,7 +11,7 @@
 return [
     // 24-hour "HH:MM", in the app timezone (config/app.php).
     'open_time' => env('STORE_OPEN_TIME', '08:00'),
-    'close_time' => env('STORE_CLOSE_TIME', '17:00'),
+    'close_time' => env('STORE_CLOSE_TIME', '18:00'),
 
     // The weekdays the store opens, ISO-8601: 1 = Monday ... 7 = Sunday.
     'open_days' => env('STORE_OPEN_DAYS', '1,2,3,4,5,6'),

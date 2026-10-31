@@ -287,6 +287,8 @@ class TransactionController extends Controller
     /** GET /api/admin/transactions/{transaction_id} */
     public function getTransaction(Request $request, $transactionId)
     {
+        $this->checkout->markOverdueCheckouts();
+
         $transaction = Transaction::with(['item.photos', 'buyer.studentInfo', 'seller'])
             ->where('transaction_id', $transactionId)
             ->first();

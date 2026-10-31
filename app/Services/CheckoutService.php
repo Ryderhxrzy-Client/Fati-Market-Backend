@@ -119,6 +119,21 @@ class CheckoutService
             $downpaymentAmount = $isCash ? $quote['downpayment_amount'] : Money::zero();
             $remainingBalance = $isCash ? $quote['remaining_balance'] : Money::zero();
 
+            // The item is held until 6:00 PM (store closing time) of the scheduled pickup date.
+            $tz = config('app.timezone');
+            if (!empty($pickupDate)) {
+                $heldUntil = Carbon::parse($pickupDate, $tz)->setTime(18, 0, 0);
+            } else {
+                $now = Carbon::now($tz);
+                $earliest = StoreHours::isPastCutoff($now) ? $now->copy()->addDay() : $now->copy();
+                $openDays = StoreHours::openDays();
+                while (!in_array($earliest->dayOfWeekIso, $openDays, true)) {
+                    $earliest->addDay();
+                }
+                $heldUntil = $earliest->copy()->setTime(18, 0, 0);
+                $pickupDate = $earliest->toDateString();
+            }
+
             $transaction = Transaction::create([
                 'item_id' => $locked->item_id,
                 'buyer_id' => $freshBuyer->user_id,
@@ -145,7 +160,7 @@ class CheckoutService
                 'status' => $isFullPoints
                     ? Transaction::STATUS_RESERVED
                     : Transaction::STATUS_PENDING_PAYMENT,
-                'reserved_until' => now()->addHours(self::RESERVATION_HOURS),
+                'reserved_until' => $heldUntil,
                 'is_seller_payout' => false,
                 'transaction_date' => now(),
             ]);
@@ -166,7 +181,7 @@ class CheckoutService
                 'item_id' => $locked->item_id,
                 'user_id' => $freshBuyer->user_id,
                 'status' => 'active',
-                'expires_at' => now()->addHours(self::RESERVATION_HOURS),
+                'expires_at' => $heldUntil,
             ]);
 
             return $transaction->fresh();
