@@ -460,136 +460,141 @@ class TransactionController extends Controller
     }
 
     /**
-     * Admin forfeits downpayment and returns item to public marketplace for an overdue order.
+     * Admin forfeits downpayment and returns item to public marketplace for an overdue order,
+     * or cancels and initiates an automated refund if requested.
      * POST /api/admin/transactions/{transaction_id}/forfeit
      */
     public function forfeitOverdue(Request $request, $transactionId)
     {
-        $transaction = Transaction::where('transaction_id', $transactionId)->firstOrFail();
-        $item = Item::where('item_id', $transaction->item_id)->firstOrFail();
+        return DB::transaction(function () use ($request, $transactionId) {
+            $transaction = Transaction::where('transaction_id', $transactionId)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $item = Item::where('item_id', $transaction->item_id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $hasPaid = $transaction->hasPaid();
-        $isDownpaymentOnly = $hasPaid && $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0;
-        $shouldRefund = $request->boolean('refund', false);
+            if ($transaction->status === Transaction::STATUS_CANCELLED) {
+                return response()->json([
+                    'message' => 'Transaction is already cancelled.',
+                    'data' => TransactionPresenter::forAdmin($transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller'])),
+                ], 200);
+            }
 
-        if ($shouldRefund && $hasPaid) {
-            // If points were used, restore points
+            $hasPaid = $transaction->hasPaid();
+            $isDownpaymentOnly = $hasPaid && $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0;
+            $shouldRefund = $request->boolean('refund', false);
+
+            // "make sure na walang makukuhang points ang user pag na forfeit. babalik lang ang points nila kung ayun ang ginamit nila."
+            // Only restore points if the buyer actually redeemed points at checkout (points_used > 0).
+            // No reward points are ever given.
             if ($transaction->points_used > 0) {
-                $buyer = \App\Models\User::where('user_id', $transaction->buyer_id)->first();
+                $buyer = User::where('user_id', $transaction->buyer_id)->first();
                 if ($buyer) {
-                    app(\App\Services\PointsLedger::class)->refund(
+                    $this->ledger->refund(
                         $buyer,
                         $transaction->points_used,
                         $transaction,
-                        'Refund: Overdue order cancelled and refunded'
+                        $shouldRefund
+                            ? 'Points restored: Overdue reservation cancelled and refunded'
+                            : ($hasPaid ? 'Points restored: Overdue reservation forfeited' : 'Points restored: Overdue order cancelled due to non-payment')
                     );
                 }
             }
 
-            $refundable = $transaction->getRefundableAmount();
-            $transaction->refund_amount = $refundable;
-            $transaction->refund_status = Transaction::REFUND_PROCESSING;
-            $transaction->refund_reason = 'Overdue reservation: cancelled and refunded by admin';
-
-            if ($transaction->isPaymongo() && !empty($transaction->paymongo_payment_id)) {
-                $amountInCentavos = (int) round($refundable * 100);
-                $refundResult = $this->paymongo->createRefund(
-                    $transaction->paymongo_payment_id,
-                    $amountInCentavos,
-                    'requested_by_customer',
-                    'Overdue order #' . $transaction->transaction_id . ' cancelled and refunded'
-                );
-
-                if ($refundResult['success']) {
-                    $transaction->refund_reference = $refundResult['refund_id'] ?? null;
-                }
-            }
-
-            $transaction->update([
-                'status' => Transaction::STATUS_CANCELLED,
-                'cancel_reason' => 'Overdue reservation: cancelled and refunded by admin; item returned to marketplace',
-                'cancelled_at' => now(),
-                'cancelled_by' => $request->user()->user_id,
-                'downpayment_status' => 'refunded',
-            ]);
-
+            // Put item back in the catalog as public
             $item->update([
-                'status' => \App\Models\Item::STATUS_PUBLIC,
+                'status' => Item::STATUS_PUBLIC,
             ]);
 
+            // Cancel any active/overdue reservations for this item
             \App\Models\Reservation::where('item_id', $transaction->item_id)
                 ->whereIn('status', ['active', 'overdue'])
                 ->update(['status' => 'cancelled']);
 
-            $refundText = $transaction->refund_amount ? (' An automated refund of ₱' . number_format($transaction->refund_amount, 2) . ' is being processed (typically 3–5 business days).') : '';
+            if ($shouldRefund && $hasPaid) {
+                $refundable = $transaction->getRefundableAmount();
+                $refundRef = null;
+
+                if ($transaction->isPaymongo() && !empty($transaction->paymongo_payment_id)) {
+                    try {
+                        $paymongoService = app(\App\Services\PayMongoService::class);
+                        $amountInCentavos = (int) round($refundable * 100);
+                        $refundResult = $paymongoService->createRefund(
+                            $transaction->paymongo_payment_id,
+                            $amountInCentavos,
+                            'others',
+                            'Overdue order #' . $transaction->transaction_id . ' cancelled and refunded'
+                        );
+
+                        $refundRef = $refundResult['id'] ?? null;
+                    } catch (\Exception $e) {
+                        Log::error('Auto PayMongo refund failed on forfeit: ' . $e->getMessage());
+                    }
+                }
+
+                $transaction->update([
+                    'status' => Transaction::STATUS_CANCELLED,
+                    'cancel_reason' => 'Overdue reservation: cancelled and refunded by admin; item returned to marketplace',
+                    'cancelled_at' => now(),
+                    'cancelled_by' => $request->user()->user_id,
+                    'downpayment_status' => 'refunded',
+                    'refund_status' => Transaction::REFUND_PROCESSING,
+                    'refund_amount' => $refundable,
+                    'refund_reason' => 'Overdue reservation: cancelled and refunded by admin',
+                    'refund_reference' => $refundRef,
+                ]);
+
+                $refundText = $refundable > 0 ? (' An automated refund of ₱' . number_format($refundable, 2) . ' is being processed (typically 3–5 business days).') : '';
+
+                $this->checkout->announce(
+                    $transaction,
+                    'Reservation cancelled & refunded',
+                    'The pickup schedule was overdue. The order was cancelled, payment is being refunded to the buyer, and the item has been returned to the marketplace.' . $refundText
+                );
+
+                $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
+
+                return response()->json([
+                    'message' => 'Overdue order cancelled, refund initiated, and item returned to marketplace successfully.',
+                    'data' => TransactionPresenter::forAdmin($loaded),
+                ], 200);
+            }
+
+            // Normal forfeit / relist (without monetary refund)
+            $transaction->update([
+                'status' => Transaction::STATUS_CANCELLED,
+                'cancel_reason' => $hasPaid
+                    ? ($isDownpaymentOnly
+                        ? 'Overdue reservation: downpayment forfeited by admin and item returned to marketplace'
+                        : 'Overdue reservation: payment forfeited by admin and item returned to marketplace')
+                    : 'Overdue reservation: cancelled by admin due to non-payment and item returned to marketplace',
+                'cancelled_at' => now(),
+                'cancelled_by' => $request->user()->user_id,
+                'downpayment_status' => $hasPaid ? 'forfeited' : 'cancelled',
+            ]);
 
             $this->checkout->announce(
                 $transaction,
-                'Reservation cancelled & refunded',
-                'The pickup schedule was overdue. The order was cancelled, payment is being refunded to the buyer, and the item has been returned to the marketplace.' . $refundText
+                $hasPaid ? 'Reservation forfeited' : 'Reservation cancelled',
+                $hasPaid
+                    ? ($isDownpaymentOnly
+                        ? 'The pickup schedule was overdue. Downpayment was forfeited and the item has been returned to the marketplace.'
+                        : 'The pickup schedule was overdue. Payment was forfeited and the item has been returned to the marketplace.')
+                    : 'The pickup schedule was overdue without payment. The item has been returned to the marketplace.'
             );
 
             $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
 
             return response()->json([
-                'message' => 'Overdue order cancelled, refund initiated, and item returned to marketplace successfully.',
+                'message' => $hasPaid
+                    ? ($isDownpaymentOnly
+                        ? 'Downpayment forfeited and item returned to marketplace successfully.'
+                        : 'Payment forfeited and item returned to marketplace successfully.')
+                    : 'Order cancelled and item returned to marketplace successfully.',
                 'data' => TransactionPresenter::forAdmin($loaded),
             ], 200);
-        }
-
-        // If unpaid and points were used, restore points
-        if (!$hasPaid && $transaction->points_used > 0) {
-            $buyer = \App\Models\User::where('user_id', $transaction->buyer_id)->first();
-            if ($buyer) {
-                app(\App\Services\PointsLedger::class)->refund(
-                    $buyer,
-                    $transaction->points_used,
-                    $transaction,
-                    'Refund: Overdue order cancelled due to non-payment'
-                );
-            }
-        }
-
-        $transaction->update([
-            'status' => Transaction::STATUS_CANCELLED,
-            'cancel_reason' => $hasPaid
-                ? ($isDownpaymentOnly
-                    ? 'Overdue reservation: downpayment forfeited by admin and item returned to marketplace'
-                    : 'Overdue reservation: payment forfeited by admin and item returned to marketplace')
-                : 'Overdue reservation: cancelled by admin due to non-payment and item returned to marketplace',
-            'cancelled_at' => now(),
-            'cancelled_by' => $request->user()->user_id,
-            'downpayment_status' => $hasPaid ? 'forfeited' : 'cancelled',
-        ]);
-
-        $item->update([
-            'status' => \App\Models\Item::STATUS_PUBLIC,
-        ]);
-
-        \App\Models\Reservation::where('item_id', $transaction->item_id)
-            ->whereIn('status', ['active', 'overdue'])
-            ->update(['status' => 'cancelled']);
-
-        $this->checkout->announce(
-            $transaction,
-            $hasPaid ? 'Reservation forfeited' : 'Reservation cancelled',
-            $hasPaid
-                ? ($isDownpaymentOnly
-                    ? 'The pickup schedule was overdue. Downpayment was forfeited and the item has been returned to the marketplace.'
-                    : 'The pickup schedule was overdue. Payment was forfeited and the item has been returned to the marketplace.')
-                : 'The pickup schedule was overdue without payment. The item has been returned to the marketplace.'
-        );
-
-        $loaded = $transaction->fresh()->load(['item.photos', 'buyer.studentInfo', 'seller']);
-
-        return response()->json([
-            'message' => $hasPaid
-                ? ($isDownpaymentOnly
-                    ? 'Downpayment forfeited and item returned to marketplace successfully.'
-                    : 'Payment forfeited and item returned to marketplace successfully.')
-                : 'Order cancelled and item returned to marketplace successfully.',
-            'data' => TransactionPresenter::forAdmin($loaded),
-        ], 200);
+        });
     }
 
     /**
@@ -733,11 +738,7 @@ class TransactionController extends Controller
                 return response()->json(['message' => 'This transaction was unpaid and does not require a refund.'], 422);
             }
 
-            $refundAmount = $transaction->refund_amount ?? (
-                $transaction->downpayment_amount !== null && (float) $transaction->downpayment_amount > 0 && (float) $transaction->remaining_balance > 0
-                    ? $transaction->downpayment_amount
-                    : $transaction->amount_due
-            );
+            $refundAmount = $transaction->getRefundableAmount();
 
             $action = $validated['action'] ?? ($transaction->payment_method === Transaction::METHOD_PAYMONGO ? 'paymongo' : 'manual');
 
