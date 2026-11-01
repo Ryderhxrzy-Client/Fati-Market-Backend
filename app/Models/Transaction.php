@@ -241,6 +241,25 @@ class Transaction extends Model
         return $this->refund_status === self::REFUND_FAILED;
     }
 
+    public function isPaymongo(): bool
+    {
+        return $this->payment_method === self::METHOD_PAYMONGO
+            || (!empty($this->paymongo_payment_id));
+    }
+
+    public function getRefundableAmount(): float
+    {
+        if ($this->refund_amount !== null && (float) $this->refund_amount > 0) {
+            return (float) $this->refund_amount;
+        }
+
+        if ($this->downpayment_amount !== null && (float) $this->downpayment_amount > 0 && (float) $this->remaining_balance > 0) {
+            return (float) $this->downpayment_amount;
+        }
+
+        return (float) $this->amount_due;
+    }
+
     /**
      * Whether the buyer may still switch between cash and GCash.
      *
