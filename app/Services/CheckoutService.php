@@ -555,16 +555,11 @@ class CheckoutService
             $refundRef = null;
 
             if ($hasPaid) {
-                if ($locked->downpayment_amount !== null && (float) $locked->downpayment_amount > 0 && (float) $locked->remaining_balance > 0) {
-                    $refundableAmount = (float) $locked->downpayment_amount;
-                } else {
-                    $refundableAmount = (float) $locked->amount_due;
-                }
-
+                $refundableAmount = $locked->getRefundableAmount();
                 $refundStatus = Transaction::REFUND_PROCESSING;
 
                 // If paid via PayMongo with payment ID, trigger PayMongo refund immediately
-                if ($locked->payment_method === Transaction::METHOD_PAYMONGO && !empty($locked->paymongo_payment_id)) {
+                if ($locked->isPaymongo() && !empty($locked->paymongo_payment_id)) {
                     try {
                         $paymongoService = app(\App\Services\PayMongoService::class);
                         $centavos = (int) round($refundableAmount * 100);
