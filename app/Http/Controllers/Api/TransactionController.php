@@ -516,20 +516,39 @@ class TransactionController extends Controller
                 $refundable = $transaction->getRefundableAmount();
                 $refundRef = null;
 
-                if ($transaction->isPaymongo() && !empty($transaction->paymongo_payment_id)) {
-                    try {
-                        $paymongoService = app(\App\Services\PayMongoService::class);
-                        $amountInCentavos = (int) round($refundable * 100);
-                        $refundResult = $paymongoService->createRefund(
-                            $transaction->paymongo_payment_id,
-                            $amountInCentavos,
-                            'others',
-                            'Overdue order #' . $transaction->transaction_id . ' cancelled and refunded'
-                        );
+                if ($transaction->isPaymongo()) {
+                    if (empty($transaction->paymongo_payment_id)) {
+                        $sessionId = $transaction->paymongo_checkout_session_id ?? (str_starts_with((string) $transaction->payment_reference, 'cs_') ? $transaction->payment_reference : null);
+                        if (!empty($sessionId)) {
+                            try {
+                                $paymongoService = app(\App\Services\PayMongoService::class);
+                                $sessionData = $paymongoService->getCheckoutSession($sessionId);
+                                $payments = $sessionData['attributes']['payments'] ?? [];
+                                if (!empty($payments) && !empty($payments[0]['id'])) {
+                                    $transaction->update(['paymongo_payment_id' => $payments[0]['id']]);
+                                    $transaction->refresh();
+                                }
+                            } catch (\Exception $e) {
+                                Log::warning("Could not auto-resolve PayMongo payment ID on forfeit from session: {$e->getMessage()}");
+                            }
+                        }
+                    }
 
-                        $refundRef = $refundResult['id'] ?? null;
-                    } catch (\Exception $e) {
-                        Log::error('Auto PayMongo refund failed on forfeit: ' . $e->getMessage());
+                    if (!empty($transaction->paymongo_payment_id)) {
+                        try {
+                            $paymongoService = app(\App\Services\PayMongoService::class);
+                            $amountInCentavos = (int) round($refundable * 100);
+                            $refundResult = $paymongoService->createRefund(
+                                $transaction->paymongo_payment_id,
+                                $amountInCentavos,
+                                'others',
+                                'Overdue order #' . $transaction->transaction_id . ' cancelled and refunded'
+                            );
+
+                            $refundRef = $refundResult['id'] ?? null;
+                        } catch (\Exception $e) {
+                            Log::error('Auto PayMongo refund failed on forfeit: ' . $e->getMessage());
+                        }
                     }
                 }
 
@@ -744,7 +763,26 @@ class TransactionController extends Controller
 
             if ($action === 'paymongo') {
                 if (empty($transaction->paymongo_payment_id)) {
-                    return response()->json(['message' => 'No PayMongo Payment ID found on this transaction.'], 422);
+                    $sessionId = $transaction->paymongo_checkout_session_id ?? (str_starts_with((string) $transaction->payment_reference, 'cs_') ? $transaction->payment_reference : null);
+                    if (!empty($sessionId)) {
+                        try {
+                            $paymongoService = app(\App\Services\PayMongoService::class);
+                            $sessionData = $paymongoService->getCheckoutSession($sessionId);
+                            $payments = $sessionData['attributes']['payments'] ?? [];
+                            if (!empty($payments) && !empty($payments[0]['id'])) {
+                                $transaction->update(['paymongo_payment_id' => $payments[0]['id']]);
+                                $transaction->refresh();
+                            }
+                        } catch (\Exception $e) {
+                            Log::warning("Could not auto-resolve PayMongo payment ID on refund from session: {$e->getMessage()}");
+                        }
+                    }
+                }
+
+                if (empty($transaction->paymongo_payment_id)) {
+                    return response()->json([
+                        'message' => 'No PayMongo Payment ID found on this transaction. If this order was paid manually via GCash receipt or Cash, please use "Mark Refund as Sent" instead.'
+                    ], 422);
                 }
 
                 $paymongoService = app(\App\Services\PayMongoService::class);

@@ -558,20 +558,39 @@ class CheckoutService
                 $refundableAmount = $locked->getRefundableAmount();
                 $refundStatus = Transaction::REFUND_PROCESSING;
 
-                // If paid via PayMongo with payment ID, trigger PayMongo refund immediately
-                if ($locked->isPaymongo() && !empty($locked->paymongo_payment_id)) {
-                    try {
-                        $paymongoService = app(\App\Services\PayMongoService::class);
-                        $centavos = (int) round($refundableAmount * 100);
-                        $refundRes = $paymongoService->createRefund(
-                            $locked->paymongo_payment_id,
-                            $centavos,
-                            'others',
-                            "Order #{$locked->transaction_id} cancellation: {$reason}"
-                        );
-                        $refundRef = $refundRes['id'] ?? null;
-                    } catch (\Exception $e) {
-                        \Illuminate\Support\Facades\Log::error('Auto PayMongo refund failed on cancel: ' . $e->getMessage());
+                // If paid via PayMongo, trigger PayMongo refund immediately
+                if ($locked->isPaymongo()) {
+                    if (empty($locked->paymongo_payment_id)) {
+                        $sessionId = $locked->paymongo_checkout_session_id ?? (str_starts_with((string) $locked->payment_reference, 'cs_') ? $locked->payment_reference : null);
+                        if (!empty($sessionId)) {
+                            try {
+                                $paymongoService = app(PayMongoService::class);
+                                $sessionData = $paymongoService->getCheckoutSession($sessionId);
+                                $payments = $sessionData['attributes']['payments'] ?? [];
+                                if (!empty($payments) && !empty($payments[0]['id'])) {
+                                    $locked->update(['paymongo_payment_id' => $payments[0]['id']]);
+                                    $locked->refresh();
+                                }
+                            } catch (\Exception $e) {
+                                \Illuminate\Support\Facades\Log::warning("Could not auto-resolve PayMongo payment ID on cancel from session: {$e->getMessage()}");
+                            }
+                        }
+                    }
+
+                    if (!empty($locked->paymongo_payment_id)) {
+                        try {
+                            $paymongoService = app(PayMongoService::class);
+                            $centavos = (int) round($refundableAmount * 100);
+                            $refundRes = $paymongoService->createRefund(
+                                $locked->paymongo_payment_id,
+                                $centavos,
+                                'others',
+                                "Order #{$locked->transaction_id} cancellation: {$reason}"
+                            );
+                            $refundRef = $refundRes['id'] ?? null;
+                        } catch (\Exception $e) {
+                            \Illuminate\Support\Facades\Log::error('Auto PayMongo refund failed on cancel: ' . $e->getMessage());
+                        }
                     }
                 }
             }

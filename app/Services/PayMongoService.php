@@ -163,6 +163,33 @@ class PayMongoService
     }
 
     /**
+     * Retrieve a PayMongo Checkout Session by ID.
+     *
+     * @param string $sessionId e.g. cs_xxxx
+     * @return array
+     */
+    public function getCheckoutSession(string $sessionId): array
+    {
+        $secretKey = $this->getSecretKey();
+
+        $response = Http::withBasicAuth($secretKey, '')
+            ->acceptJson()
+            ->get(self::BASE_URL . "/checkout_sessions/{$sessionId}");
+
+        if ($response->failed()) {
+            Log::error('PayMongo get checkout session failed', [
+                'session_id' => $sessionId,
+                'status' => $response->status(),
+                'error_detail' => $response->json('errors.0.detail') ?? $response->body(),
+            ]);
+            $errorMsg = $response->json('errors.0.detail') ?? 'Failed to retrieve checkout session.';
+            throw new RuntimeException("PayMongo API error: {$errorMsg}");
+        }
+
+        return $response->json('data') ?? [];
+    }
+
+    /**
      * List existing webhooks registered on PayMongo.
      *
      * @return array
