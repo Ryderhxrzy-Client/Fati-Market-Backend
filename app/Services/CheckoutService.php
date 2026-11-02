@@ -8,6 +8,8 @@ use App\Models\Transaction;
 use App\Models\User;
 use App\Support\LoyaltyRules;
 use App\Support\Money;
+use App\Support\StoreHours;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use RuntimeException;
