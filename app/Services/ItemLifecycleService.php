@@ -50,7 +50,7 @@ class ItemLifecycleService
     public function setMeetupSchedule(Item $item, ?string $schedule): Item
     {
         if ($schedule !== null) {
-            $at = Carbon::parse($schedule, config('app.timezone'))->setTimezone(config('app.timezone'));
+            $at = \Illuminate\Support\Carbon::parse($schedule, config('app.timezone'))->setTimezone(config('app.timezone'));
             // Persist the store-local time that was checked.
             $schedule = $at->format('Y-m-d H:i:s');
         }

@@ -124,11 +124,11 @@ class CheckoutService
             // The item is held until 6:00 PM (store closing time) of the scheduled pickup date.
             $tz = config('app.timezone');
             if (!empty($pickupDate)) {
-                $heldUntil = Carbon::parse($pickupDate, $tz)->setTime(18, 0, 0);
+                $heldUntil = \Illuminate\Support\Carbon::parse($pickupDate, $tz)->setTime(18, 0, 0);
             } else {
-                $now = Carbon::now($tz);
-                $earliest = StoreHours::isPastCutoff($now) ? $now->copy()->addDay() : $now->copy();
-                $openDays = StoreHours::openDays();
+                $now = \Illuminate\Support\Carbon::now($tz);
+                $earliest = \App\Support\StoreHours::isPastCutoff($now) ? $now->copy()->addDay() : $now->copy();
+                $openDays = \App\Support\StoreHours::openDays();
                 while (!in_array($earliest->dayOfWeekIso, $openDays, true)) {
                     $earliest->addDay();
                 }
