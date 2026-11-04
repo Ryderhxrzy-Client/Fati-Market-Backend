@@ -58,6 +58,8 @@ class Transaction extends Model
     ];
 
     public const PAYMENT_UNPAID = 'unpaid';
+    /** Legacy value some rows carry; treated as fully paid. */
+    public const PAYMENT_PAID = 'paid';
     public const PAYMENT_PARTIALLY_PAID = 'partially_paid';
     public const PAYMENT_PROOF_SUBMITTED = 'proof_submitted';
     public const PAYMENT_VERIFIED = 'verified';
