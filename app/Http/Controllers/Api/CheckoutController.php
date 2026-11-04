@@ -117,11 +117,9 @@ class CheckoutController extends Controller
             $isPastCutoff = \App\Support\StoreHours::isPastCutoff($now);
             $openDays = \App\Support\StoreHours::openDays();
 
-            // Earliest bookable day
-            $earliest = $isPastCutoff ? $now->copy()->addDay() : $now->copy();
-            while (!in_array($earliest->dayOfWeekIso, $openDays, true)) {
-                $earliest->addDay();
-            }
+            // Earliest bookable day: today while the store can still take a
+            // pick-up (even before it opens), otherwise the next open day.
+            $earliest = \App\Support\StoreHours::earliestPickupDate($now);
 
             $pickupDate = $validated['pickup_date'] ?? null;
             if ($pickupDate) {

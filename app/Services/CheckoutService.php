@@ -126,12 +126,7 @@ class CheckoutService
             if (!empty($pickupDate)) {
                 $heldUntil = \Illuminate\Support\Carbon::parse($pickupDate, $tz)->setTime(18, 0, 0);
             } else {
-                $now = \Illuminate\Support\Carbon::now($tz);
-                $earliest = \App\Support\StoreHours::isPastCutoff($now) ? $now->copy()->addDay() : $now->copy();
-                $openDays = \App\Support\StoreHours::openDays();
-                while (!in_array($earliest->dayOfWeekIso, $openDays, true)) {
-                    $earliest->addDay();
-                }
+                $earliest = \App\Support\StoreHours::earliestPickupDate();
                 $heldUntil = $earliest->copy()->setTime(18, 0, 0);
                 $pickupDate = $earliest->toDateString();
             }

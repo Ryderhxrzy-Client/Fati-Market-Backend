@@ -113,21 +113,41 @@ class StoreHours
     }
 
     /**
-     * Whether the current moment (or a given time) is past the store's transaction cutoff.
-     * At or after 5:00 PM (17:00), or on non-operational days/hours.
+     * Whether today can no longer take a pick-up: the store is closed today,
+     * or it is already at or past closing time.
+     *
+     * Before opening on an open day is NOT past cutoff: an order placed at
+     * 12:24 AM on a Wednesday can still be picked up that same Wednesday.
      */
     public static function isPastCutoff(?Carbon $now = null): bool
     {
         $timezone = config('app.timezone');
         $now = ($now ?? Carbon::now($timezone))->copy()->setTimezone($timezone);
-        $time = $now->format('H:i');
-        $dayOfWeek = $now->dayOfWeekIso;
 
-        if (!in_array($dayOfWeek, self::openDays(), true)) {
+        if (!in_array($now->dayOfWeekIso, self::openDays(), true)) {
             return true;
         }
 
-        return $time >= self::cutoffTime() || $time < self::openTime();
+        return $now->format('H:i') >= self::cutoffTime();
+    }
+
+    /**
+     * The first day a pick-up/meet-up can be scheduled: today while the store
+     * can still take one, otherwise the next open day (skipping closed days).
+     * Returned at midnight in the app timezone.
+     */
+    public static function earliestPickupDate(?Carbon $now = null): Carbon
+    {
+        $timezone = config('app.timezone');
+        $now = ($now ?? Carbon::now($timezone))->copy()->setTimezone($timezone);
+        $openDays = self::openDays();
+
+        $day = self::isPastCutoff($now) ? $now->copy()->addDay() : $now->copy();
+        while (!in_array($day->dayOfWeekIso, $openDays, true)) {
+            $day->addDay();
+        }
+
+        return $day->startOfDay();
     }
 
     /**
@@ -140,7 +160,10 @@ class StoreHours
         $cutoff = self::cutoffLabel();
 
         if (self::isPastCutoff($now)) {
-            return "Order placed after the {$cutoff} cutoff. Meet-up and store pickup scheduled for tomorrow at Ofelia's store during store hours (" . self::label() . ').';
+            $earliest = self::earliestPickupDate($now);
+            $when = $earliest->isSameDay($now->copy()->addDay()) ? 'tomorrow' : 'on ' . $earliest->format('l, M j');
+
+            return "Order placed after the {$cutoff} cutoff. Meet-up and store pickup scheduled for {$when} at Ofelia's store during store hours (" . self::label() . ').';
         }
 
         return "Order placed within store hours. Meet-up and store pickup available today before {$cutoff} at Ofelia's store.";
